@@ -1,0 +1,44 @@
+# 1. Credentials and environment files (Never bake secrets into images)
+.env
+.env.*
+*.pem
+*.key
+
+# 2. Host virtual environments
+.venv/
+venv/
+env/
+
+# 3. Git metadata
+.git/
+.gitignore
+
+# 4. Python bytecode and cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*$py.class
+
+# 5. Test and lint caches
+.pytest_cache/
+.mypy_cache/
+
+# 6. Operating system & IDE files
+.DS_Store
+.vscode/
+.idea/
+
+# 7. Build and packaging artifacts
+build/
+dist/
+*.egg-info/
+src/*.egg-info/
+
+# 8. Runtime-generated data (not baked into image)
+data/evidence_uploads/
+data/evidence/
+data/prowler/
+data/synthlab/
+agent_runs/
+saved_reports/

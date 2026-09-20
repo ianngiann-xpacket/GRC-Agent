@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Dict, List, Optional, Any
 from pydantic import BaseModel, Field
 import json
+from pathlib import Path
 
 from secgrc.compliance.evidence_requirements import EvidenceRequirementRegistry
 from secgrc.evidence.document.repository import EvidenceRepository
@@ -76,7 +77,8 @@ class GapAnalysisEngine:
     def _load_isms_p_controls(self):
         """ISMS-P 통제 기준 로드"""
         try:
-            with open("/Users/taesunhwang/GRC Agent/src/secgrc/data/isms_p_controls.json", "r", encoding="utf-8") as f:
+            controls_path = Path(__file__).resolve().parent.parent / "data" / "isms_p_controls.json"
+            with open(controls_path, "r", encoding="utf-8") as f:
                 self.controls = json.load(f)
         except Exception as e:
             print(f"Warning: Could not load ISMS-P controls: {e}")
