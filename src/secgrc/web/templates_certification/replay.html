@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+
+{% block title %}Audit Replay — ISMS-P{% endblock %}
+{% block crumb %}<b>Audit</b> / Audit Replay{% endblock %}
+
+{% block content %}
+<div class="workspace no-side">
+  <div>
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px">
+      <div>
+        <div class="page-title">Audit Replay</div>
+        <div class="page-sub">심사원 상호작용 시뮬레이션 — 질의 → 모집단 조회 → 대사 → 예외 탐지 → 증적 제시 → 후속 질의</div>
+      </div>
+      <span class="demo-tag">◈ 스크립트 시나리오 (demo)</span>
+    </div>
+
+    <div class="card">
+      <div class="card-h">
+        <div class="card-t" id="replayTitle">시나리오 로딩 중…</div>
+        <span style="font-size:11px;color:var(--muted)">통제 2.2.5 퇴직 및 직무변경 관리</span>
+      </div>
+      <div class="card-b">
+        <div class="step-pills" id="replayPills" aria-label="단계 탐색"></div>
+        <div class="replay-stage" id="replayStage" aria-live="polite"></div>
+        <div class="replay-ctl" id="replayCtl"></div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px;background:#f8fafc;border-style:dashed">
+      <div class="card-b" style="font-size:12px;color:var(--text-2)">
+        <strong>Audit Replay는 결정론적 스크립트 시나리오입니다.</strong>
+        실제 심사에서 심사원이 요구할 순서(모집단 → 표본 → 예외 → 증적 → 후속 질의)를 미리 연습하고,
+        어떤 증적·대사 결과가 제시되는지 확인합니다. 자율 AI 행동은 사용하지 않습니다.
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/certification/replay.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', async () => {
+  const rp = new AuditReplay('replayStage', 'replayPills', 'replayCtl');
+  await rp.init();
+  document.getElementById('replayTitle').textContent = rp.scenario.title;
+});
+</script>
+{% endblock %}

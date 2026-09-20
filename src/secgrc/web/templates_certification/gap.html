@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+
+{% block title %}GAP Analysis — ISMS-P{% endblock %}
+{% block crumb %}<b>Audit</b> / GAP Analysis{% endblock %}
+
+{% block content %}
+<div class="workspace">
+  <div>
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px">
+      <div>
+        <div class="page-title">GAP Analysis</div>
+        <div class="page-sub">요구사항 → 정책 → 설정 → 증적 → 실제 운영의 불일치를 추적합니다.</div>
+      </div>
+      <span class="demo-tag">◈ 데모 데이터</span>
+    </div>
+
+    <!-- 요구→운영 체인 다이어그램 -->
+    <div class="card section">
+      <div class="card-b">
+        <div style="display:flex;align-items:center;gap:0;overflow-x:auto;padding:6px 0">
+          {% for step in ['요구사항', '정책', '설정', '증적', '실제 운영'] %}
+          <div style="text-align:center;min-width:110px;padding:10px 14px;background:#f8fafc;border:1.5px solid var(--border);border-radius:10px">
+            <div style="font-size:11px;font-weight:700;color:var(--muted)">STEP {{ loop.index }}</div>
+            <div style="font-weight:700;font-size:13px;margin-top:2px">{{ step }}</div>
+          </div>
+          {% if not loop.last %}<div style="color:var(--faint);padding:0 8px;font-size:16px">→</div>{% endif %}
+          {% endfor %}
+        </div>
+        <div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:14px;font-size:11.5px;color:var(--text-2)">
+          <span><span class="badge b-CONFLICT">정책≠설정</span> {{ type_counts.POLICY_CONFIG_MISMATCH }}건</span>
+          <span><span class="badge b-PARTIAL">요구≠증적</span> {{ type_counts.REQUIREMENT_EVIDENCE }}건</span>
+          <span><span class="badge b-MISSING">범위≠자산(모집단)</span> {{ type_counts.POPULATION_MISMATCH }}건</span>
+          <span><span class="badge b-MISSING">증적 부재</span> {{ type_counts.MISSING_EVIDENCE }}건</span>
+          <span><span class="badge b-EVIDENCE_STALE">증적 신선도</span> {{ type_counts.EVIDENCE_STALE }}건</span>
+          <span><span class="badge b-info">프로세스 갭</span> {{ type_counts.PROCESS_GAP }}건</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 심각도 분포 -->
+    <div class="grid-3 section" style="grid-template-columns:repeat(4,1fr)">
+      {% for sev, cnt, color in [('CRITICAL', sev_counts.CRITICAL, 'var(--red)'), ('HIGH', sev_counts.HIGH, 'var(--amber)'), ('MEDIUM', sev_counts.MEDIUM, 'var(--blue)'), ('LOW', sev_counts.LOW, 'var(--green)')] %}
+      <div class="card" style="padding:14px;text-align:center">
+        <div style="font-size:11px;font-weight:700;color:{{ color }}">{{ sev }}</div>
+        <div class="mono" style="font-size:24px;font-weight:800;color:{{ color }}">{{ cnt }}</div>
+      </div>
+      {% endfor %}
+    </div>
+
+    <!-- 상태 필터 -->
+    <div class="pills" role="group" aria-label="GAP 필터">
+      <button class="pill on">전체 ({{ gaps | length }})</button>
+      <button class="pill" onclick="filterGap('CRITICAL')">CRITICAL</button>
+      <button class="pill" onclick="filterGap('HIGH')">HIGH</button>
+      <button class="pill" onclick="filterGap('정책/설정 불일치')">정책/설정 불일치</button>
+      <button class="pill" onclick="filterGap('모집단 불일치')">모집단 불일치</button>
+      <button class="pill" onclick="filterGap('증적부족')">증적부족</button>
+    </div>
+
+    <!-- GAP 테이블 -->
+    <div class="card">
+      <div class="card-h"><div class="card-t">GAP 목록</div>
+        <span style="font-size:11px;color:var(--muted)">행 클릭 → 통제 상세 컨텍스트</span></div>
+      <div class="card-b" style="padding:0 0 6px">
+        <table class="tbl" id="gapTable">
+          <thead><tr><th>GAP</th><th>통제</th><th>항목명</th><th>유형/상태</th><th>내용</th><th>시스템</th><th>담당자</th><th>기한</th><th>심각도</th></tr></thead>
+          <tbody>
+            {% for g in gaps %}
+            <tr data-sev="{{ g.severity }}" data-label="{{ g.status_label }}"
+                data-go="/controls/{{ g.control_id }}" tabindex="0" role="button">
+              <td class="mono" style="font-size:11px">{{ g.gap_id }}</td>
+              <td class="mono" style="color:var(--blue);font-weight:600">{{ g.control_id }}</td>
+              <td style="font-weight:600;white-space:nowrap">{{ g.control_name }}</td>
+              <td><span class="badge b-{{ g.severity }}">{{ g.status_label }}</span></td>
+              <td style="font-size:12px;max-width:320px">{{ g.description }}</td>
+              <td class="mono" style="font-size:11px">{{ g.system }}</td>
+              <td style="font-size:12px">{{ g.owner }}</td>
+              <td class="mono" style="font-size:11px">{{ g.due_date }}</td>
+              <td><span class="badge b-{{ g.severity }}">{{ g.severity }}</span></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right rail: 정합성 엔진 요약 -->
+  <div class="side-stack">
+    <div class="card">
+      <div class="card-h"><div class="card-t">정합성 엔진 (L4)</div></div>
+      <div class="card-b" style="padding-top:8px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline">
+          <span class="mono" style="font-size:24px;font-weight:800;color:{{ 'var(--green)' if recon_summary.match_rate >= 80 else 'var(--amber)' }}">{{ recon_summary.match_rate | round(1) }}%</span>
+          <span style="font-size:11.5px;color:var(--muted)">일치율 ({{ recon_summary.total_checks }}건 검사)</span>
+        </div>
+        {% for r in recon_results %}
+        <div style="padding:9px 0;border-bottom:1px solid #f1f5f9;font-size:12px">
+          <div style="display:flex;justify-content:space-between">
+            <span class="mono" style="font-size:11px;font-weight:600">{{ r.control_id }}</span>
+            <span class="badge b-{{ r.status }}">{{ r.status }}</span>
+          </div>
+          <div style="color:var(--text-2);margin-top:3px">{{ r.description }}</div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function filterGap(key) {
+  document.querySelectorAll('#gapTable tbody tr').forEach(tr => {
+    tr.style.display = (tr.dataset.sev === key || tr.dataset.label === key) ? '' : 'none';
+  });
+  document.querySelectorAll('.pill').forEach(p => p.classList.remove('on'));
+  event.target.classList.add('on');
+}
+</script>
+{% endblock %}

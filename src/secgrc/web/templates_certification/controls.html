@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+
+{% block title %}Control Landscape — ISMS-P{% endblock %}
+{% block crumb %}<b>Audit</b> / Control Landscape{% endblock %}
+
+{% block content %}
+<div class="workspace no-side">
+  <div>
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px">
+      <div>
+        <div class="page-title">Control Landscape</div>
+        <div class="page-sub">ISMS-P 101개 인증기준 전체 구조 — 도메인을 클릭해 통제 단위까지 확장합니다.</div>
+      </div>
+      <span class="demo-tag">◈ 데모 데이터 · 통제정의 로드 {{ loaded_count }}/101</span>
+    </div>
+
+    <!-- 상태 필터 -->
+    <div class="pills" role="group" aria-label="상태 필터">
+      <button class="pill {% if not current_state %}on{% endif %}" onclick="AS.go('/controls')">전체</button>
+      <button class="pill {% if current_state == 'READY' %}on{% endif %}" onclick="AS.go('/controls', {state:'READY'})">준비완료</button>
+      <button class="pill {% if current_state == 'PARTIAL' %}on{% endif %}" onclick="AS.go('/controls', {state:'PARTIAL'})">일부충족</button>
+      <button class="pill {% if current_state == 'MISSING' %}on{% endif %}" onclick="AS.go('/controls', {state:'MISSING'})">미충족</button>
+      <button class="pill {% if current_state == 'CONFLICT' %}on{% endif %}" onclick="AS.go('/controls', {state:'CONFLICT'})">불일치</button>
+    </div>
+
+    <div class="card">
+      <div class="card-b landscape" id="landscapeMount"></div>
+    </div>
+
+    <div class="card" style="margin-top:16px;background:#f8fafc;border-style:dashed">
+      <div class="card-b" style="font-size:12px;color:var(--text-2)">
+        <strong>통제 정의 로드 현황:</strong> 공식 인증기준 101개 중 {{ loaded_count }}개의 상세 정의(점검항목·증적유형·담당자)가 엔진에 로드되어 있습니다.
+        나머지 항목은 <span class="demo-tag">demo</span> 스켈레톤으로 표시되며, 통제 정의 등록이 완료되면 실 데이터로 대체됩니다.
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/certification/landscape.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', async () => {
+  const land = new ControlLandscape('landscapeMount');
+  await land.load();
+  // ?state= 필터: 해당 상태 도메인 자동 확장 + 노드 강조
+  const st = AS.get('state');
+  if (st) {
+    for (const dom of land.data.domains) {
+      if (dom.counts[st] > 0) { land.zoomed = dom.id; break; }
+    }
+    land.render();
+    applyStateFilter(st);
+  }
+});
+</script>
+{% endblock %}

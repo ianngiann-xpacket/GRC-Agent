@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}System Connections — ISMS-P{% endblock %}
+{% block crumb %}<b>Data &amp; Integration</b> / System Connections{% endblock %}
+{% block content %}
+<div class="workspace">
+  <div>
+    <div class="page-title" style="margin-bottom:4px">System Connections</div>
+    <div class="page-sub" style="margin-bottom:18px">수집 대상 시스템 연결 상태 — 읽기 전용 자격증명과 범위를 관리합니다.</div>
+    <div class="grid-3">
+      {% for s in systems %}
+      <div class="card" style="padding:16px">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div style="font-weight:800;font-size:13.5px">{{ s.name }}</div>
+          <span class="badge b-{{ 'PASS' if s.status == 'CONNECTED' else 'PARTIAL' }}">{{ s.status }}</span>
+        </div>
+        <div class="mono" style="font-size:11px;color:var(--muted);margin-top:4px">{{ s.system_id }}</div>
+        <div style="font-size:12px;color:var(--text-2);margin-top:8px">{{ s.desc }}</div>
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-top:10px">
+          <span>권한: <strong style="color:var(--green)">읽기 전용</strong></span><span class="mono">{{ s.last_sync }}</span>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  <div class="side-stack">
+    <div class="card"><div class="card-h"><div class="card-t">연결 요약</div></div>
+      <div class="card-b" style="padding-top:8px">
+        <div class="metric-row" style="cursor:default"><span>연결됨</span><span class="v" style="color:var(--green)">{{ systems | selectattr('status','equalto','CONNECTED') | list | length }}</span></div>
+        <div class="metric-row" style="cursor:default"><span>미연결</span><span class="v" style="color:var(--amber)">{{ systems | selectattr('status','equalto','PLANNED') | list | length }}</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Users &amp; Roles — ISMS-P{% endblock %}
+{% block crumb %}<b>Administration</b> / Users &amp; Roles{% endblock %}
+{% block content %}
+<div class="workspace">
+  <div>
+    <div class="page-title" style="margin-bottom:4px">Users &amp; Roles</div>
+    <div class="page-sub" style="margin-bottom:18px">심사 대응 조직 — 역할별 접근 권한과 책임.</div>
+    <div class="card">
+      <div class="card-b" style="padding:0 0 6px">
+        <table class="tbl">
+          <thead><tr><th>이름</th><th>역할</th><th>부서</th><th>권한</th><th>상태</th></tr></thead>
+          <tbody>
+            {% for u in users %}
+            <tr>
+              <td style="font-weight:700">{{ u.name }}</td>
+              <td>{{ u.role }}</td>
+              <td style="color:var(--muted)">{{ u.dept }}</td>
+              <td class="mono" style="font-size:11px">{{ u.scope }}</td>
+              <td><span class="badge b-PASS">{{ u.status }}</span></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <div class="side-stack">
+    <div class="card"><div class="card-h"><div class="card-t">역할 구분</div></div>
+      <div class="card-b" style="font-size:12px;color:var(--text-2);line-height:1.8">
+        <strong>심사대응 담당자</strong> — 증적 제출·조치 수행<br>
+        <strong>독립 재검증자</strong> — 조치 완료 검증 (조치자와 분리)<br>
+        <strong>승인자</strong> — 잔여위험 수용 승인<br>
+        <strong>관리자</strong> — 커넥터·기준 버전 관리
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

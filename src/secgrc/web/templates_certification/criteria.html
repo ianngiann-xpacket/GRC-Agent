@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}ISMS-P Criteria — ISMS-P{% endblock %}
+{% block crumb %}<b>Administration</b> / ISMS-P Criteria{% endblock %}
+{% block content %}
+<div class="workspace no-side">
+  <div>
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:18px">
+      <div>
+        <div class="page-title">ISMS-P Criteria</div>
+        <div class="page-sub">인증기준 101개 (관리체계 16 + 보호대책 64 + 개인정보 21) — 2023.10.31 기준 구조</div>
+      </div>
+      <span class="demo-tag">통제정의 로드 {{ loaded }}/101</span>
+    </div>
+    {% for area in framework %}
+    <div class="card section">
+      <div class="card-h"><div class="card-t">{{ area.id }}. {{ area.name }}
+        <span style="font-size:11px;color:var(--muted);font-weight:500">{{ area.count }}개 통제</span></div></div>
+      <div class="card-b" style="padding-top:8px">
+        {% for sub in area.sub %}
+        <div class="sub-label">{{ sub.sub_id }} {{ sub.name }}</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:6px">
+          {% for c in sub.controls %}
+          <a href="/controls/{{ c.control_id }}" style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border:1px solid var(--border);border-radius:7px;font-size:12px;transition:all .15s"
+             onmouseover="this.style.borderColor='var(--blue)'" onmouseout="this.style.borderColor='var(--border)'">
+            <span><span class="mono" style="font-size:10.5px;color:var(--blue)">{{ c.control_id }}</span> {{ c.name }}</span>
+            {% if c.synthetic %}<span class="demo-tag" style="font-size:9px;padding:1px 6px">demo</span>{% else %}<span style="color:var(--green);font-size:10px">●로드됨</span>{% endif %}
+          </a>
+          {% endfor %}
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

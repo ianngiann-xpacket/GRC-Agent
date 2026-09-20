@@ -1,0 +1,174 @@
+{% extends "base.html" %}
+
+{% block title %}Audit Control Center — ISMS-P{% endblock %}
+{% block crumb %}<b>Audit</b> / Audit Control Center{% endblock %}
+
+{% block content %}
+<div class="workspace">
+  <div>
+    <!-- Header -->
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px">
+      <div>
+        <div class="page-title">Audit Control Center</div>
+        <div class="page-sub">ISMS-P 인증심사 대비, 현재 준비 상태를 한눈에 확인하고 필요한 조치를 수행하세요.</div>
+      </div>
+      <span class="demo-tag">◈ 데모 데이터 — AUDIT-DEMO-001</span>
+    </div>
+
+    <!-- KPI cards (모든 수치 클릭 → 상세 드릴다운) -->
+    <div class="kpi-grid" role="group" aria-label="핵심 지표">
+      <button class="kpi c-blue" onclick="AS.go('/controls', {state:'READY'})" aria-label="준비도 상세로 이동">
+        <div class="lbl">준비도 <span class="trend up">{{ kpis.readiness.trend }}</span></div>
+        <div class="val">{{ kpis.readiness.pct }}%</div>
+        <div class="sub2">{{ kpis.readiness.ready }} / {{ kpis.readiness.total }} 통제항목</div>
+      </button>
+      <button class="kpi c-purple" onclick="AS.go('/evidence', {status:'missing'})" aria-label="증적 확보율 상세로 이동">
+        <div class="lbl">증적 확보율 <span class="trend up">{{ kpis.evidence.trend }}</span></div>
+        <div class="val">{{ kpis.evidence.pct }}%</div>
+        <div class="sub2">{{ kpis.evidence.covered }} / {{ kpis.evidence.total }} 통제항목</div>
+      </button>
+      <button class="kpi c-amber" onclick="AS.go('/gap', {status:'open'})" aria-label="GAP 상세로 이동">
+        <div class="lbl">GAP 발견 <span class="trend down">{{ kpis.gaps.trend }}</span></div>
+        <div class="val">{{ kpis.gaps.count }}</div>
+        <div class="sub2">분석 대상 통제 기준</div>
+      </button>
+      <button class="kpi c-red" onclick="AS.go('/findings', {status:'open'})" aria-label="지적사항 상세로 이동">
+        <div class="lbl">지적사항</div>
+        <div class="val">{{ kpis.findings.count }}</div>
+        <div class="sub2">미해결 {{ kpis.findings.open }}건</div>
+      </button>
+      <button class="kpi c-green" onclick="AS.go('/findings', {action:'in_progress'})" aria-label="보완조치 상세로 이동">
+        <div class="lbl">보완조치 진행중</div>
+        <div class="val">{{ kpis.actions.count }}</div>
+        <div class="sub2">기한초과 {{ kpis.actions.overdue }}건</div>
+      </button>
+    </div>
+
+    <!-- Audit Time Machine -->
+    <div class="card section timemachine" id="timeMachinePanel">
+      <div id="timeMachineMount"></div>
+    </div>
+
+    <!-- Control Landscape -->
+    <div class="card section">
+      <div class="card-h">
+        <div class="card-t">통제항목 현황 <span style="font-size:11px;color:var(--muted);font-weight:500">도메인 클릭 → 하위 통제 확장</span></div>
+        <a class="more" href="/controls">전체 보기 →</a>
+      </div>
+      <div class="card-b landscape" id="landscapeMount"></div>
+    </div>
+
+    <!-- 주요 이슈 + 최근 GAP -->
+    <div class="two-col section">
+      <div class="card">
+        <div class="card-h"><div class="card-t">주요 이슈 TOP 5</div><a class="more" href="/gap">전체 →</a></div>
+        <div class="card-b" style="padding-top:6px">
+          {% for g in top_issues %}
+          <div class="metric-row" data-go="/controls/{{ g.control_id }}" role="button" tabindex="0">
+            <div style="min-width:0">
+              <div style="font-weight:700;font-size:12.5px"><span class="mono" style="color:var(--blue)">{{ g.control_id }}</span> {{ g.control_name }}</div>
+              <div style="font-size:11.5px;color:var(--muted);margin-top:2px">{{ g.description[:52] }}…</div>
+              <div style="font-size:10.5px;color:var(--faint);margin-top:2px">{{ g.system }} · {{ g.owner }} · 기한 {{ g.due_date }}</div>
+            </div>
+            <span class="badge b-{{ g.severity }}">{{ g.severity }}</span>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-h"><div class="card-t">증적 추세</div><a class="more" href="/reports">리포트 →</a></div>
+        <div class="card-b"><div id="trendChart"></div></div>
+      </div>
+    </div>
+
+    <!-- 최근 GAP 분석 결과 -->
+    <div class="card section">
+      <div class="card-h"><div class="card-t">최근 GAP 분석 결과</div><a class="more" href="/gap">전체 →</a></div>
+      <div class="card-b" style="padding:0 0 6px">
+        <table class="tbl">
+          <thead><tr><th>통제항목</th><th>항목명</th><th>상태</th><th>발견일</th><th>대상 시스템</th><th>담당자</th></tr></thead>
+          <tbody>
+            {% for g in recent_gaps %}
+            <tr data-go="/controls/{{ g.control_id }}" tabindex="0" role="button">
+              <td class="mono" style="color:var(--blue);font-weight:600">{{ g.control_id }}</td>
+              <td style="font-weight:600">{{ g.control_name }}</td>
+              <td><span class="badge b-{{ g.severity }}">{{ g.status_label }}</span></td>
+              <td class="mono" style="font-size:11.5px">{{ g.found_date }}</td>
+              <td class="mono" style="font-size:11.5px">{{ g.system }}</td>
+              <td>{{ g.owner }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ Right rail ============ -->
+  <div class="side-stack">
+    <!-- AI 심사지원 에이전트 -->
+    <div class="card assistant">
+      <div class="card-h"><div class="card-t" style="color:var(--purple)">✦ AI 심사지원 에이전트</div></div>
+      <div class="assistant-body" id="assistantBody" aria-live="polite"></div>
+      <div class="assistant-input">
+        <textarea id="assistantInput" rows="3" maxlength="1000"
+          placeholder="질문 입력 — Enter 전송 · Shift+Enter 줄바꿈" aria-label="AI 심사지원 질문 입력"></textarea>
+        <button type="button" class="rbtn primary" id="assistantSend" style="padding:8px 14px;font-size:12.5px;white-space:nowrap;align-self:flex-end">전송</button>
+      </div>
+      <div class="advisory">ⓘ AI 제안은 참고용이며 공식 인증 판정이 아닙니다.</div>
+      <div class="sugg" id="assistantSugg"></div>
+    </div>
+
+    <!-- 실시간 활동 내역 -->
+    <div class="card">
+      <div class="card-h"><div class="card-t">실시간 활동 내역</div><span class="demo-tag">demo</span></div>
+      <div class="card-b" style="padding-top:8px" id="activityStream" aria-live="polite"></div>
+    </div>
+
+    <!-- 범위 & 모집단 -->
+    <div class="card">
+      <div class="card-h"><div class="card-t">범위 &amp; 모집단</div><span class="demo-tag">demo</span></div>
+      <div class="card-b" style="padding-top:8px">
+        <div style="font-size:12px;color:var(--muted);margin-bottom:6px">인증범위 자산 검증 현황</div>
+        <div style="display:flex;justify-content:space-between;align-items:baseline">
+          <span class="mono" style="font-size:22px;font-weight:800">{{ '{:,}'.format(population.total_assets) }}건</span>
+          <span style="font-size:11px;color:var(--amber);font-weight:600">검증 필요 {{ population.exceptions }}건</span>
+        </div>
+        <div class="progress" style="margin:8px 0 12px">
+          <i style="width:{{ (population.verified / population.total_assets * 100) | round }}%"></i>
+        </div>
+        {% for label, val, href in [
+          ('시스템', population.systems, '/connections'),
+          ('IAM 계정', population.iam_accounts, '/evidence'),
+          ('특권 계정', population.privileged_accounts, '/evidence'),
+          ('개인정보처리시스템', population.pii_systems, '/evidence'),
+          ('수탁사(처리위탁)', population.processors, '/connections'),
+          ('클라우드 리소스', population.cloud_resources, '/connections'),
+        ] %}
+        <div class="metric-row" data-go="{{ href }}" role="button" tabindex="0">
+          <span>{{ label }}</span><span class="v">{{ val }}</span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/certification/chart.js"></script>
+<script src="/static/certification/landscape.js"></script>
+<script src="/static/certification/timemachine.js"></script>
+<script src="/static/certification/assistant.js?v=2"></script>
+<script>
+document.addEventListener('DOMContentLoaded', async () => {
+  const land = new ControlLandscape('landscapeMount'); await land.load();
+  applyStateFilter(AS.get('state'));
+  const tm = new AuditTimeMachine('timeMachineMount'); await tm.init();
+  const ast = new AuditAssistant('assistantBody', 'assistantSugg', 'assistantInput', 'assistantSend'); await ast.init();
+  renderLineChart(document.getElementById('trendChart'), await AS.api('/api/audit/trend'));
+  AS.startActivity(document.getElementById('activityStream'));
+});
+</script>
+{% endblock %}

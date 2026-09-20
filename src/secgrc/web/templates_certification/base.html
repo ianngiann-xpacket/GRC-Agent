@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}ISMS-P Audit Assurance{% endblock %}</title>
+  <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/certification/app.css">
+</head>
+<body>
+<div class="shell">
+  <!-- ============ Sidebar ============ -->
+  <nav class="sidebar" aria-label="주요 탐색">
+    <div class="sidebar-logo">
+      <div class="mark">A</div>
+      <div>
+        <div class="name">Audit Assurance</div>
+        <div class="sub">ISMS-P Certification</div>
+      </div>
+    </div>
+
+    <div class="nav-group">
+      <div class="nav-group-label">Audit</div>
+      <a class="nav-item {% if active_page == 'audit' %}active{% endif %}" href="/audit"><span class="ico">◈</span><span>Audit Control Center</span></a>
+      <a class="nav-item {% if active_page == 'controls' %}active{% endif %}" href="/controls"><span class="ico">▦</span><span>Control Landscape</span></a>
+      <a class="nav-item {% if active_page == 'evidence' %}active{% endif %}" href="/evidence"><span class="ico">▤</span><span>Evidence Management</span></a>
+      <a class="nav-item {% if active_page == 'gap' %}active{% endif %}" href="/gap"><span class="ico">◐</span><span>GAP Analysis</span>{% if nav_gaps %}<span class="cnt">{{ nav_gaps }}</span>{% endif %}</a>
+      <a class="nav-item {% if active_page == 'findings' %}active{% endif %}" href="/findings"><span class="ico">⚑</span><span>Findings &amp; Actions</span>{% if nav_findings %}<span class="cnt">{{ nav_findings }}</span>{% endif %}</a>
+      <a class="nav-item {% if active_page == 'replay' %}active{% endif %}" href="/replay"><span class="ico">▶</span><span>Audit Replay</span></a>
+    </div>
+
+    <div class="nav-group">
+      <div class="nav-group-label">Data &amp; Integration</div>
+      <a class="nav-item {% if active_page == 'collection' %}active{% endif %}" href="/collection"><span class="ico">↻</span><span>Collection Status</span></a>
+      <a class="nav-item {% if active_page == 'intake' %}active{% endif %}" href="/intake"><span class="ico">⇪</span><span>Evidence Intake</span></a>
+      <a class="nav-item {% if active_page == 'connections' %}active{% endif %}" href="/connections"><span class="ico">⇄</span><span>System Connections</span></a>
+    </div>
+
+    <div class="nav-group">
+      <div class="nav-group-label">Reporting</div>
+      <a class="nav-item {% if active_page == 'reports' %}active{% endif %}" href="/reports"><span class="ico">▣</span><span>Reports</span></a>
+      <a class="nav-item {% if active_page == 'history' %}active{% endif %}" href="/history"><span class="ico">◷</span><span>Audit History</span></a>
+    </div>
+
+    <div class="nav-group">
+      <div class="nav-group-label">Administration</div>
+      <a class="nav-item {% if active_page == 'criteria' %}active{% endif %}" href="/criteria"><span class="ico">☰</span><span>ISMS-P Criteria</span></a>
+      <a class="nav-item {% if active_page == 'users' %}active{% endif %}" href="/users"><span class="ico">◉</span><span>Users &amp; Roles</span></a>
+      <a class="nav-item {% if active_page == 'settings' %}active{% endif %}" href="/settings"><span class="ico">⚙</span><span>System Settings</span></a>
+    </div>
+
+    <!-- Persistent audit context card -->
+    <div class="audit-card" id="auditContextCard">
+      <div class="lbl">CURRENT AUDIT</div>
+      <div class="title">{{ audit_ctx.name if audit_ctx else 'ISMS-P 인증심사' }}</div>
+      <div class="dday">D{% if audit_ctx and audit_ctx.d_day >= 0 %}-{{ audit_ctx.d_day }}{% else %}+{{ -(audit_ctx.d_day) if audit_ctx else 0 }}{% endif %}</div>
+      <div class="meta">{{ audit_ctx.audit_type if audit_ctx else '갱신심사' }} · {{ audit_ctx.target_date if audit_ctx else '2026-09-30' }}</div>
+      <select id="auditSelector" aria-label="심사 선택">
+        {% for a in (audit_ctx.audits if audit_ctx else []) %}
+        <option value="{{ a.audit_id }}" {% if audit_ctx and a.audit_id == audit_ctx.audit_id %}selected{% endif %}>{{ a.audit_id }} · {{ a.audit_type }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </nav>
+
+  <!-- ============ Main ============ -->
+  <div class="main">
+    <header class="topbar">
+      <div class="crumb">{% block crumb %}<b>Audit</b> / Audit Control Center{% endblock %}</div>
+      <div class="spacer"></div>
+      <select class="tb-select" id="auditTypeSelect" aria-label="심사 유형">
+        <option {% if audit_ctx and audit_ctx.audit_type == '최초심사' %}selected{% endif %}>최초심사</option>
+        <option {% if audit_ctx and audit_ctx.audit_type == '사후심사' %}selected{% endif %}>사후심사</option>
+        <option {% if not audit_ctx or audit_ctx.audit_type == '갱신심사' %}selected{% endif %}>갱신심사</option>
+      </select>
+      <button class="tb-btn" id="timeMachineBtn" aria-label="Audit Time Machine 열기">◷ Time Machine</button>
+      <div class="tb-icon" title="알림" aria-label="알림">🔔<span class="dot"></span></div>
+      <div class="tb-user">
+        <div class="avatar">빵</div>
+        <div><div style="font-weight:600;font-size:12px;">빵떼옹</div>
+        <div style="font-size:10.5px;color:var(--muted);">정보보호팀 · 심사대응</div></div>
+      </div>
+    </header>
+
+    {% block content %}{% endblock %}
+  </div>
+</div>
+
+<script src="/static/certification/app.js"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

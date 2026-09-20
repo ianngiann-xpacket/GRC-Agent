@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "secgrc"
+version = "0.1.0"
+description = "Cybersecurity Compliance AI Agent (GRC Agent)"
+requires-python = ">=3.14"
+dependencies = [
+    "langgraph>=0.2.0",
+    "python-dotenv>=1.0.0",
+    "google-genai>=0.1.0",
+    "fastapi>=0.110.0",
+    "uvicorn>=0.28.0",
+    "jinja2>=3.1.0",
+    "pydantic>=2.7.0",
+]
+
+
+[project.scripts]
+secgrc = "secgrc.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["secgrc", "secgrc.*"]

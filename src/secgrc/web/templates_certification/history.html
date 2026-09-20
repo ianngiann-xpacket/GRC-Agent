@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Audit History — ISMS-P{% endblock %}
+{% block crumb %}<b>Reporting</b> / Audit History{% endblock %}
+{% block content %}
+<div class="workspace">
+  <div>
+    <div class="page-title" style="margin-bottom:4px">Audit History</div>
+    <div class="page-sub" style="margin-bottom:18px">과거 심사 이력과 결과 — 시점별 상태는 Audit Time Machine에서 확인할 수 있습니다.</div>
+    <div class="card">
+      <div class="card-b">
+        {% for a in audits %}
+        <div style="display:flex;gap:16px;padding:14px 0;border-bottom:1px solid #f1f5f9">
+          <div style="width:100px;flex-shrink:0">
+            <div class="mono" style="font-size:11px;color:var(--muted)">{{ a.target_date }}</div>
+            <div class="mono" style="font-size:11px;font-weight:700;color:var(--blue)">{{ a.audit_id }}</div>
+          </div>
+          <div style="flex:1">
+            <div style="font-weight:700;font-size:13px">{{ a.name }} <span class="badge b-info">{{ a.audit_type }}</span> <span class="badge b-MANUAL" style="background:#f1f5f9;color:var(--muted)">{{ a.tier }}</span></div>
+            <div style="font-size:12px;color:var(--muted);margin-top:3px">수석심사원 {{ a.lead_auditor }}</div>
+          </div>
+          <button class="tb-btn" style="align-self:center" data-go="/audit" data-go-audit="{{ a.audit_id }}">컨텍스트 전환 →</button>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  <div class="side-stack">
+    <div class="card"><div class="card-h"><div class="card-t">Time Machine 바로가기</div></div>
+      <div class="card-b" style="font-size:12px;color:var(--text-2)">
+        과거 심사 시점의 통제 상태·증적·지적사항을 보려면
+        <a href="/audit?timemachine=1" style="color:var(--blue)">Audit Control Center의 Time Machine</a>을 사용하세요.
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

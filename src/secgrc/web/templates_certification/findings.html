@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+
+{% block title %}Findings &amp; Actions — ISMS-P{% endblock %}
+{% block crumb %}<b>Audit</b> / Findings &amp; Actions{% endblock %}
+
+{% block content %}
+<div class="workspace">
+  <div>
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px">
+      <div>
+        <div class="page-title">Findings &amp; Actions</div>
+        <div class="page-sub">지적사항 생명주기 — 등록 → 원인분석 → 조치 → 독립재검증 → 종결</div>
+      </div>
+      <span class="demo-tag">◈ 데모 데이터</span>
+    </div>
+
+    <!-- 요약 -->
+    <div class="kpi-grid" style="grid-template-columns:repeat(5,1fr)">
+      <div class="kpi" style="cursor:default"><div class="lbl">전체</div><div class="val">{{ summary.total_findings }}</div></div>
+      <div class="kpi c-red" style="cursor:default"><div class="lbl">치명적</div><div class="val">{{ summary.critical_findings }}</div></div>
+      <div class="kpi c-amber" style="cursor:default"><div class="lbl">주요</div><div class="val">{{ summary.major_findings }}</div></div>
+      <div class="kpi c-blue" style="cursor:default"><div class="lbl">미해결</div><div class="val">{{ summary.open_findings + summary.in_progress_findings }}</div></div>
+      <div class="kpi c-red" style="cursor:default"><div class="lbl">기한초과 조치</div><div class="val">{{ summary.corrective_actions.overdue }}</div></div>
+    </div>
+
+    <!-- 지적사항 카드 -->
+    {% for f in findings %}
+    <div class="card section" id="{{ f.finding_id }}">
+      <div class="card-b">
+        <!-- 헤더 -->
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;margin-bottom:12px">
+          <div>
+            <code style="font-size:11px;background:#f1f5f9;padding:2px 8px;border-radius:4px;margin-right:8px">{{ f.defect_number }}</code>
+            <span style="font-weight:800;font-size:14.5px">{{ f.title }}</span>
+            <div style="font-size:12px;color:var(--muted);margin-top:3px">
+              <a href="/controls/{{ f.control_id }}" class="mono" style="color:var(--blue)">{{ f.control_id }}</a>
+              {{ f.control_name }} · 심사원 {{ f.auditor }} · 담당 {{ f.assignee or '미지정' }}</div>
+          </div>
+          <div style="display:flex;gap:6px">
+            <span class="badge b-{{ f.severity }}">{{ f.severity }}</span>
+            <span class="badge b-{{ f.status }}">{{ f.status }}</span>
+          </div>
+        </div>
+
+        <!-- 생명주기 -->
+        {% set stage_idx = {'OPEN':0, 'IN_PROGRESS':3, 'RESOLVED':5, 'VERIFIED':6, 'CLOSED':7, 'REOPENED':1}[f.status] if f.status in ['OPEN','IN_PROGRESS','RESOLVED','VERIFIED','CLOSED','REOPENED'] else 0 %}
+        <div class="lifecycle" style="margin-bottom:14px" aria-label="지적사항 생명주기">
+          {% for step in ['탐지','검토','할당','보완조치','증적제출','재검증','종결'] %}
+          <div class="lc-step {% if loop.index0 < stage_idx %}done{% elif loop.index0 == stage_idx %}now{% endif %}">
+            <div class="p">{{ loop.index }}</div><span>{{ step }}</span>
+          </div>
+          {% if not loop.last %}<span class="lc-arrow">→</span>{% endif %}
+          {% endfor %}
+        </div>
+
+        <!-- 12개 분석 필드 -->
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:8px;font-size:12px">
+          {% for lbl, val in [('확인된 사실', f.confirmed_facts), ('대상/표본', (f.target ~ ' / ' ~ f.sample) if f.sample else f.target),
+            ('판단근거', f.judgment_basis), ('발생기간/영향', (f.occurrence_period ~ ' / ' ~ f.impact) if f.impact else f.occurrence_period),
+            ('현재 통제', f.current_controls), ('추가 확인(모집단)', f.additional_checks)] %}
+          <div style="padding:8px 10px;background:#f8fafc;border-radius:6px">
+            <div style="color:var(--muted);font-size:10.5px;font-weight:700">{{ lbl }}</div>
+            <div style="margin-top:2px">{{ val or '—' }}</div>
+          </div>
+          {% endfor %}
+        </div>
+
+        <!-- 근본원인 -->
+        {% if f.root_cause %}
+        <div style="margin-top:10px;padding:10px 12px;background:var(--purple-soft);border-radius:8px;font-size:12px">
+          <div style="color:var(--purple);font-size:10.5px;font-weight:700">근본원인 분석</div>
+          현상: {{ f.phenomenon }} → 직접: {{ f.direct_cause }} → 근본: <strong>{{ f.root_cause }}</strong>
+        </div>
+        {% endif %}
+
+        <!-- 보완조치 -->
+        {% if f.corrective_actions %}
+        <div style="margin-top:10px">
+          <div style="font-size:10.5px;font-weight:700;color:var(--muted);margin-bottom:6px">보완조치</div>
+          {% for a in f.corrective_actions %}
+          <div style="display:flex;align-items:center;gap:10px;padding:7px 10px;background:#fafafa;border:1px solid #f1f5f9;border-radius:6px;margin-bottom:4px;font-size:12px">
+            <span class="badge b-info">{{ a.type }}</span>
+            <span style="flex:1">{{ a.description }}</span>
+            <span style="color:var(--muted)">{{ a.assignee }}</span>
+            <span class="mono" style="font-size:11px">{{ a.due_date }}</span>
+            <span class="badge b-{{ a.status }}">{{ a.status }}</span>
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+
+        <div style="margin-top:10px;padding-top:10px;border-top:1px solid #f1f5f9;display:flex;gap:16px;font-size:11.5px;color:var(--muted)">
+          <span>독립재검증: {% if f.independent_reviewer %}<strong style="color:var(--green)">✓ {{ f.independent_reviewer }}</strong>{% else %}<strong style="color:var(--red)">미실시</strong>{% endif %}</span>
+          <span>잔여위험 보고: {% if f.residual_risk_reported %}<strong style="color:var(--green)">✓</strong>{% else %}—{% endif %}</span>
+          <span>재발 모니터링: {% if f.recurrence_monitoring %}<strong style="color:var(--green)">✓</strong>{% else %}—{% endif %}</span>
+        </div>
+      </div>
+    </div>
+    {% else %}
+    <div class="card"><div class="card-b" style="text-align:center;color:var(--muted)">등록된 지적사항이 없습니다</div></div>
+    {% endfor %}
+  </div>
+
+  <!-- Right rail: 추세 -->
+  <div class="side-stack">
+    <div class="card">
+      <div class="card-h"><div class="card-t">추세 분석 ({{ trend.period_days }}일)</div></div>
+      <div class="card-b" style="padding-top:8px;font-size:12.5px">
+        {% for cat, cnt in trend.by_category.items() %}
+        <div class="metric-row" style="cursor:default"><span style="font-size:11.5px">{{ cat }}</span><span class="v">{{ cnt }}</span></div>
+        {% endfor %}
+        <div class="metric-row" style="cursor:default;margin-top:6px"><span>평균 종결 기간</span><span class="v">{{ trend.avg_closure_days | round(1) }}일</span></div>
+        <div class="metric-row" style="cursor:default"><span>기한 초과율</span><span class="v" style="color:{{ 'var(--red)' if trend.overdue_rate > 0.2 else 'var(--text)' }}">{{ (trend.overdue_rate * 100) | round(0) }}%</span></div>
+      </div>
+    </div>
+    <div class="card" style="background:var(--blue-soft);border-color:#dbeafe">
+      <div class="card-b" style="font-size:12px;color:#1e40af">
+        <strong>종결 조건:</strong> 독립 재검증(조치자≠검증자) 완료 + 모집단 수준 점검 + 잔여위험 경영진 보고 시에만 종결됩니다. 표본만 수정하고 종결하는 것은 재심사 시 재지적됩니다.
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

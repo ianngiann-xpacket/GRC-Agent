@@ -1,0 +1,46 @@
+# 1. Python 가상환경 (Virtual Environment)
+# 로컬에 설치된 패키지 및 파이썬 실행 바이너리 디렉터리
+.venv/
+venv/
+
+# 2. Python 바이트코드 및 캐시 파일
+# 파이썬이 실행 속도 향상을 위해 자동 생성하는 임시 컴파일 파일
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# 3. 환경 변수 및 보안 인증 정보 (Credentials / Secrets)
+# API Key, DB 비밀번호, 토큰 등이 저장되는 파일
+.env
+.env.local
+.env.*.local
+
+# 4. 운영체제 특화 메타데이터 파일 (macOS)
+# Mac Finder가 폴더 표시 속성 저장을 위해 자동 생성하는 파일
+.DS_Store
+
+# 5. 에디터 및 IDE 설정
+.vscode/
+.idea/
+
+# 6. 테스트 및 빌드 캐시
+.pytest_cache/
+dist/
+build/
+*.egg-info/
+
+# 7. 보고서 산출물 (Reports)
+reports/
+
+# 8. Synthlab 생성 산출물 (Generated synthetic data runs)
+data/synthlab/
+data/prowler/
+
+# 9. 임시 패키지 캐시
+pydantic_pkg/
+
+# 10. 런타임 산출물 (업로드 증적·스토리지·레드팀 벡터 생성물)
+data/evidence_uploads/
+evidence_storage/
+redteam_vectors/

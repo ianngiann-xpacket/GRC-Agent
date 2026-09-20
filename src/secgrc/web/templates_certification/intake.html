@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Evidence Intake — ISMS-P{% endblock %}
+{% block crumb %}<b>Data &amp; Integration</b> / Evidence Intake{% endblock %}
+{% block content %}
+<div class="workspace">
+  <div>
+    <div class="page-title" style="margin-bottom:4px">Evidence Intake</div>
+    <div class="page-sub" style="margin-bottom:18px">수동 증적 업로드 — 정책 문서·회의록·교육기록 등 비시스템 증적의 접수와 제출 전 검증.</div>
+
+    <div class="card section">
+      <div class="card-h"><div class="card-t">증적 업로드</div><span class="badge b-PASS" style="font-size:10px">실제 업로드 동작</span></div>
+      <div class="card-b">
+        <div id="dropZone" role="button" tabindex="0" aria-label="증적 파일 업로드 영역"
+             style="border:2px dashed var(--border-strong);border-radius:10px;padding:32px;text-align:center;color:var(--muted);cursor:pointer;transition:border-color .15s,background .15s">
+          <div style="font-size:28px;margin-bottom:8px">⇪</div>
+          <div style="font-weight:600">파일을 드래그하거나 클릭하여 업로드</div>
+          <div style="font-size:11.5px;margin-top:4px">PDF · XLSX · DOCX · PNG · HWP · HTML · TXT · CSV — 최대 10MB, 업로드 즉시 민감정보 자동 검사</div>
+          <input type="file" id="fileInput" hidden
+                 accept=".pdf,.xlsx,.docx,.pptx,.png,.jpg,.jpeg,.hwp,.hwpx,.txt,.csv,.html,.htm,.md,.log,.json,.zip">
+        </div>
+        <div id="uploadStatus" style="display:none;margin-top:10px;padding:10px 12px;border-radius:8px;font-size:12.5px"></div>
+        <div id="suggestBox" style="margin-top:10px"></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:14px">
+          <select class="tb-select" id="intakeControl" style="width:100%" aria-label="통제 항목 선택">
+            <option value="">통제 항목 선택…</option>
+            {% for c in controls %}<option value="{{ c.control_id }}">{{ c.control_id }} {{ c.name }}</option>{% endfor %}
+          </select>
+          <select class="tb-select" id="intakeType" style="width:100%" aria-label="증적 유형 선택">
+            <option value="POLICY">POLICY — 정책 문서</option>
+            <option value="PROCEDURE">PROCEDURE — 절차서</option>
+            <option value="MEETING_MINUTES">MEETING_MINUTES — 회의록</option>
+            <option value="TRAINING_RECORD">TRAINING_RECORD — 교육 기록</option>
+            <option value="APPROVAL_RECORD">APPROVAL_RECORD — 승인 기록</option>
+            <option value="AUDIT_REPORT">AUDIT_REPORT — 감사 보고서</option>
+            <option value="ORGANIZATION_CHART">ORGANIZATION_CHART — 조직도</option>
+            <option value="CONTRACT">CONTRACT — 계약서</option>
+            <option value="OTHER">OTHER — 기타</option>
+          </select>
+          <button class="rbtn primary" id="uploadBtn" disabled>파일 선택 후 업로드 가능</button>
+        </div>
+        <div style="font-size:11px;color:var(--muted);margin-top:10px">
+          업로드된 파일은 <code>data/evidence_uploads/</code>에 UUID 파일명으로 저장되고, SHA-256 해시가 불변 증적 원장(WORM)에 기록됩니다.
+          민감정보(시크릿·주민등록번호) 검출 시 파일은 저장되지 않으며 차단 사실만 원장에 기록됩니다.
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-h"><div class="card-t">제출 전 자동 검증 결과</div><span class="demo-tag" title="기존 행은 데모 데이터">기존 행 demo</span></div>
+      <div class="card-b" style="padding:0 0 6px">
+        <table class="tbl">
+          <thead><tr><th>문서</th><th>통제</th><th>민감정보</th><th>SHA-256</th><th>결과</th></tr></thead>
+          <tbody id="intakeResults">
+            {% for d in intake_checks %}
+            <tr>
+              <td style="font-weight:600;font-size:12px">{{ d.doc }} <span class="demo-tag" style="margin-left:4px">demo</span></td>
+              <td class="mono" style="font-size:11px">{{ d.control }}</td>
+              <td><span class="badge b-{{ 'FAIL' if d.sensitive else 'PASS' }}">{{ '검출' if d.sensitive else '없음' }}</span></td>
+              <td class="mono" style="font-size:11px">—</td>
+              <td><span class="badge b-{{ 'PASS' if d.passed else 'FAIL' }}">{{ '통과' if d.passed else '차단' }}</span></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <div class="side-stack">
+    <div class="card" style="background:var(--amber-soft);border-color:#fde68a">
+      <div class="card-b" style="font-size:12px;color:#92400e">
+        <strong>⚠️ 민감정보 차단:</strong> 비밀번호·API키·주민등록번호가 포함된 문서는 심사 제출이 차단됩니다. 제출물 자체가 유출 사고가 되지 않도록 합니다.
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-h"><div class="card-t">업로드 보안 통제</div></div>
+      <div class="card-b" style="font-size:11.5px;color:var(--muted);line-height:1.7">
+        · 확장자 화이트리스트 + 매직바이트 대조<br>
+        · 10MB 크기 상한<br>
+        · 파일명 basename 추출 (경로 탈출 방지)<br>
+        · UUID 파일명으로 디스크 저장<br>
+        · HTML 파일은 증적 보관용이며 인라인 렌더링되지 않음<br>
+        · 커스텀 헤더 요구 + 동일 출처 검증 (CSRF 방어)
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="/static/certification/intake.js?v=2"></script>
+{% endblock %}

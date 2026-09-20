@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Collection Status — ISMS-P{% endblock %}
+{% block crumb %}<b>Data &amp; Integration</b> / Collection Status{% endblock %}
+{% block content %}
+<div class="workspace">
+  <div>
+    <div class="page-title" style="margin-bottom:4px">Collection Status</div>
+    <div class="page-sub" style="margin-bottom:18px">읽기 전용 수집 커넥터의 실행 상태 — 수집 시각·대상·결과를 추적합니다.</div>
+    <div class="card">
+      <div class="card-b" style="padding:0 0 6px">
+        <table class="tbl">
+          <thead><tr><th>커넥터</th><th>유형</th><th>수집 대상</th><th>최근 수집</th><th>레코드</th><th>상태</th></tr></thead>
+          <tbody>
+            {% for c in collectors %}
+            <tr>
+              <td style="font-weight:700">{{ c.name }}</td>
+              <td class="mono" style="font-size:11px">{{ c.type }}</td>
+              <td style="font-size:12px">{{ c.target }}</td>
+              <td class="mono" style="font-size:11px">{{ c.last_run }}</td>
+              <td class="mono">{{ c.records }}</td>
+              <td><span class="badge b-{{ 'PASS' if c.status == 'ACTIVE' else 'PARTIAL' }}">{{ c.status }}</span></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="card" style="margin-top:16px;background:#f8fafc;border-style:dashed">
+      <div class="card-b" style="font-size:12px;color:var(--text-2)">
+        <strong>읽기 전용 원칙:</strong> 모든 커넥터는 조회 전용 자격증명만 사용하며 대상 시스템을 변경하지 않습니다.
+        수집 결과는 증적 원장에 해시체인으로 기록되어 수집 시각이 위변조되지 않습니다.
+      </div>
+    </div>
+  </div>
+  <div class="side-stack">
+    <div class="card"><div class="card-h"><div class="card-t">수집 요약</div></div>
+      <div class="card-b" style="padding-top:8px">
+        <div class="metric-row" style="cursor:default"><span>활성 커넥터</span><span class="v">{{ collectors | selectattr('status','equalto','ACTIVE') | list | length }}/{{ collectors | length }}</span></div>
+        <div class="metric-row" style="cursor:default"><span>오늘 수집 레코드</span><span class="v">{{ collectors | sum(attribute='records') }}</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

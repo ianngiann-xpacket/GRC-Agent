@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+
+{% block title %}{{ detail.control_id }} {{ detail.name }} — ISMS-P{% endblock %}
+{% block crumb %}<b>Audit</b> / <a href="/controls" style="color:var(--blue)">Control Landscape</a> / {{ detail.control_id }}{% endblock %}
+
+{% block content %}
+<div class="workspace">
+  <div>
+    <!-- 헤더 -->
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px">
+      <div>
+        <div class="page-title">
+          <span class="mono" style="color:var(--blue)">{{ detail.control_id }}</span> {{ detail.name }}
+          <span class="badge b-{{ detail.state }}" style="vertical-align:middle">{{ detail.state }}</span>
+          {% if not detail.loaded %}<span class="demo-tag" style="vertical-align:middle">demo</span>{% endif %}
+        </div>
+        <div class="page-sub">담당 {{ detail.owner }} ({{ detail.owner_dept }}) · 증적 확보율 {{ detail.evidence_pct }}%</div>
+      </div>
+      <button class="tb-btn" onclick="history.back()">← 목록으로</button>
+    </div>
+
+    <!-- 증적 체인: Requirement → … → Verification -->
+    <div class="card section">
+      <div class="card-h"><div class="card-t">통제–증적 체인</div>
+        <span style="font-size:11px;color:var(--muted)">각 노드 클릭 시 하위 데이터 표시</span></div>
+      <div class="card-b">
+        <div class="chain">
+          {% for n in detail.chain %}
+          <div class="chain-node {{ n.status }}" tabindex="0" role="button"
+               onclick="toggleChainDetail(this)" onkeydown="if(event.key==='Enter')toggleChainDetail(this)">
+            <div class="chain-ico">{{ loop.index }}</div>
+            <div style="flex:1;min-width:0">
+              <div style="display:flex;justify-content:space-between;align-items:center">
+                <div><span class="nname">{{ n.node }}</span> <span class="nlabel">{{ n.label }}</span></div>
+                <span class="badge b-{{ n.status }}">{{ {'ok':'충족','warn':'부분','fail':'미흡','info':'정보'}[n.status] }}</span>
+              </div>
+              <div class="ndetail">{{ n.detail }}</div>
+              <div class="chain-extra" style="display:none;margin-top:8px;padding:10px;background:#f8fafc;border-radius:8px;font-size:12px;color:var(--text-2)">
+                {% if n.node == 'Requirement' %}
+                  {{ detail.requirements or '통제 정의 미로드 — 공식 인증기준 참조 필요' }}
+                  {% if detail.checkpoints %}<div style="margin-top:6px"><strong>점검항목:</strong><ul style="margin:4px 0 0 16px;padding:0">{% for cp in detail.checkpoints %}<li>{{ cp }}</li>{% endfor %}</ul></div>{% endif %}
+                {% elif n.node == 'System Configuration' %}
+                  {% for r in detail.recon %}<div class="mono" style="font-size:11px;padding:3px 0">[{{ r.type }}] {{ r.description }} — <span class="badge b-{{ r.status }}">{{ r.status }}</span></div>{% else %}관측된 설정 불일치 없음{% endfor %}
+                {% elif n.node == 'Population' %}
+                  모집단 데이터는 범위↔자산 대사로 검증됩니다. 표본이 아닌 전체 모집단 기준으로 완전성을 확인하세요.
+                {% elif n.node == 'Evidence' %}
+                  {% for e in detail.evidence_items %}
+                  <div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #eef2f7">
+                    <span class="mono" style="font-size:11px">{{ e.evidence_id }}</span>
+                    <span style="font-size:11px">{{ e.type }} · {{ e.source }} · {{ e.collected_at }}</span>
+                    <span class="badge b-{{ e.status }}">{{ e.status }}</span>
+                  </div>
+                  {% endfor %}
+                {% elif n.node == 'Finding' %}
+                  {% for f in detail.findings %}
+                  <div style="padding:4px 0"><a href="/findings" class="mono" style="color:var(--blue)">{{ f.defect_number }}</a>
+                    {{ f.title }} <span class="badge b-{{ f.severity }}">{{ f.severity }}</span> <span class="badge b-{{ f.status }}">{{ f.status }}</span></div>
+                  {% else %}연관 지적사항 없음{% endfor %}
+                {% elif n.node == 'Verification' %}
+                  조치자와 재검증자는 분리되어야 합니다. 독립 재검증 완료 후에만 종결 가능합니다.
+                {% else %}
+                  {{ n.detail }}
+                {% endif %}
+              </div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    <!-- 증적 원장 레코드 -->
+    <div class="card section">
+      <div class="card-h"><div class="card-t">증적 원장 레코드</div><a class="more" href="/evidence">전체 원장 →</a></div>
+      <div class="card-b" style="padding:0 0 6px">
+        <table class="tbl">
+          <thead><tr><th>레코드</th><th>증적 ID</th><th>유형</th><th>수집</th><th>생성자</th><th>시각</th><th>해시</th></tr></thead>
+          <tbody>
+            {% for r in detail.ledger_records %}
+            <tr>
+              <td class="mono" style="font-size:11px">{{ r.record_id }}</td>
+              <td class="mono" style="font-size:11px;color:var(--blue)">{{ r.evidence_id }}</td>
+              <td><span class="badge b-info">{{ r.record_type }}</span></td>
+              <td class="mono" style="font-size:11px">{{ r.method }}</td>
+              <td style="font-size:12px">{{ r.created_by }}</td>
+              <td class="mono" style="font-size:11px">{{ r.created_at }}</td>
+              <td class="mono" style="font-size:10px;color:var(--muted)">{{ r.hash }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="7" style="text-align:center;color:var(--muted);padding:20px">이 통제에 연결된 원장 레코드가 없습니다</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right rail -->
+  <div class="side-stack">
+    <div class="card">
+      <div class="card-h"><div class="card-t">증적 상태</div></div>
+      <div class="card-b" style="padding-top:8px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">
+          <span class="mono" style="font-size:26px;font-weight:800;color:var(--purple)">{{ detail.evidence_pct }}%</span>
+          <span class="badge b-{{ detail.state }}">{{ detail.state }}</span>
+        </div>
+        <div class="progress"><i style="width:{{ detail.evidence_pct }}%;background:var(--purple)"></i></div>
+        <div style="font-size:11px;color:var(--muted);margin-top:10px">증적 유형별 수집 상태 (Available / Partial / Missing / Conflicting)</div>
+        {% for e in detail.evidence_items %}
+        <div class="metric-row" style="cursor:default">
+          <span style="font-size:11.5px">{{ e.type }}</span>
+          <span class="badge b-{{ e.status }}">{{ e.status }}</span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-h"><div class="card-t">정합성 검사 (L4)</div></div>
+      <div class="card-b" style="padding-top:6px">
+        {% for r in detail.recon %}
+        <div style="padding:9px 0;border-bottom:1px solid #f1f5f9;font-size:12px">
+          <div style="display:flex;justify-content:space-between"><span class="mono" style="font-size:10.5px;color:var(--muted)">{{ r.type }}</span>
+            <span class="badge b-{{ r.status }}">{{ r.status }}</span></div>
+          <div style="margin-top:4px;color:var(--text-2)">{{ r.description }}</div>
+        </div>
+        {% else %}
+        <div style="color:var(--muted);font-size:12.5px;padding:8px 0">정합성 불일치 없음 — 정책↔설정 일치</div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function toggleChainDetail(el) {
+  const x = el.querySelector('.chain-extra');
+  if (x) x.style.display = x.style.display === 'none' ? 'block' : 'none';
+}
+</script>
+{% endblock %}
