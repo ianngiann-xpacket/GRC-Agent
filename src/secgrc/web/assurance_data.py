@@ -137,31 +137,6 @@ def get_collectors() -> List[Dict[str, Any]]:
          "deployment": "온프레미스/SaaS (EDR 연동 예정)",
          "collects": "악성코드 탐지·단말 이상행위·백신/패치 현황",
          "detail": "연동 예정 — 악성코드 방지·단말 통제 증적 자동화 목적"},
-        {"name": "HR Connector", "type": "READ-ONLY", "target": "HR-ERP (입퇴사·조직이동·겸직)",
-         "last_run": "—", "records": 0, "status": "PLANNED",
-         "deployment": "온프레미스 (사내 HR-ERP)",
-         "collects": "직원 마스터·입퇴사자 명단·조직이동·겸직/파견 현황",
-         "detail": "hr_connector.py 모델 구현됨 — 실제 HR-ERP 연동은 미구성"},
-        {"name": "IAM Connector", "type": "READ-ONLY", "target": "AD/IAM (계정·권한·MFA·비밀번호정책)",
-         "last_run": "—", "records": 0, "status": "PLANNED",
-         "deployment": "온프레미스 (AD-PROD + IAM-GW)",
-         "collects": "계정 목록·권한 그룹·MFA 등록 여부·비밀번호 정책·마지막 로그인·비활성/휴면 계정",
-         "detail": "iam_connector.py 모델 구현됨 — 실제 AD/IAM 연동은 미구성"},
-        {"name": "CI/CD Connector", "type": "READ-ONLY", "target": "배포 이력·변경 승인",
-         "last_run": "—", "records": 0, "status": "PLANNED",
-         "deployment": "온프레미스 (CI/CD 파이프라인)",
-         "collects": "배포 이력·변경 승인 기록·빌드/릴리스 로그",
-         "detail": "연동 예정 — 변경관리 통제(2.10.x) 증적 자동화 목적"},
-        {"name": "ITSM Connector", "type": "READ-ONLY", "target": "변경관리·사고 티켓",
-         "last_run": "—", "records": 0, "status": "PLANNED",
-         "deployment": "SaaS (외부 ITSM 서비스)",
-         "collects": "변경관리 티켓·사고/장애 기록·서비스 요청",
-         "detail": "연동 예정"},
-        {"name": "Vulnerability Scanner", "type": "READ-ONLY", "target": "취약점 스캔 결과",
-         "last_run": "—", "records": 0, "status": "PLANNED",
-         "deployment": "온프레미스/SaaS (스캐너 연동 예정)",
-         "collects": "취약점 스캔 결과·CVE·조치 상태",
-         "detail": "연동 예정 — 취약점 관리 통제(2.10.x) 증적 자동화 목적"},
     ]
 
 
@@ -1099,14 +1074,10 @@ def post_assistant(message: str, page: Optional[str] = None) -> Dict[str, Any]:
     elif any(k in message for k in ["수집", "커넥터", "연동", "연결된 시스템", "어떤 시스템", "시스템에서 데이터", "데이터를 가져오는"]):
         # 특정 커넥터/시스템이 지목되면 그것만 상세 응답, 아니면 전체 개요
         _ALIAS = {
-            "HR Connector": ["hr", "인사", "hr connector", "hr-erp"],
-            "IAM Connector": ["iam", "계정", "ad", "active directory", "iam-gw", "mfa"],
             "SIEM Connector": ["siem", "로그", "siem-01"],
-            "CI/CD Connector": ["ci/cd", "cicd", "배포", "파이프라인"],
-            "ITSM Connector": ["itsm", "티켓", "변경관리", "사고"],
             "CSPM Connector": ["cspm", "prowler", "클라우드", "cloud", "aws", "gcp"],
-            "Vulnerability Scanner": ["취약점", "vulnerability", "scanner", "cve"],
-            "DLP/개인정보 Connector": ["dlp", "개인정보"],
+            "DLP Connector": ["dlp", "개인정보", "유출"],
+            "EDR Connector": ["edr", "단말", "악성코드", "엔드포인트"],
         }
         low = message.lower()
         named = [c for c in get_collectors()
@@ -1114,7 +1085,9 @@ def post_assistant(message: str, page: Optional[str] = None) -> Dict[str, Any]:
         if named:
             lines = []
             for c in named:
-                st = "수집 중" if c["status"] == "ACTIVE" else "아직 수집하지 않음 (연동 예정)"
+                st = ("수집 중" if c["status"] == "ACTIVE"
+                      else "수집 가능 — Prowler 패널에서 실행" if c["status"] == "READY"
+                      else "아직 수집하지 않음 (연동 예정)")
                 lines.append(
                     f"**{c['name']}** — {st}\n"
                     f"- 대상: {c['target']}\n"
@@ -1130,26 +1103,26 @@ def post_assistant(message: str, page: Optional[str] = None) -> Dict[str, Any]:
                      {"label": "System Connections", "href": "/connections"}]
             sugg = ["수집 중인 커넥터 전체 보여줘", "실제 데이터와 합성 데이터는 뭐가 달라?"]
         else:
-            act = [c for c in get_collectors() if c["status"] == "ACTIVE"]
-            pln = [c for c in get_collectors() if c["status"] == "PLANNED"]
+            cols = get_collectors()
+            rdy = [c for c in cols if c["status"] in ("ACTIVE", "READY")]
+            pln = [c for c in cols if c["status"] == "PLANNED"]
             conn = [s for s in get_connections() if s["status"] == "CONNECTED"]
-            act_lines = "\n".join(
-                f"- **{c['name']}** → {c['target']} (마지막 수집 {c['last_run']}, {c['records']:,}건)"
-                for c in act)
+            rdy_lines = "\n".join(
+                f"- **{c['name']}** → {c['target']}" for c in rdy) or "- 없음"
             pln_line = " · ".join(c["name"] for c in pln)
             conn_line = " · ".join(s["system_id"] for s in conn)
             reply = (
-                f"현재 수집 중인 커넥터는 **{len(act)}개**입니다 (표시 상태는 demo 값).\n\n"
-                f"**수집 중 (ACTIVE)**\n{act_lines}\n\n"
+                f"자동 수집 커넥터는 **{len(cols)}개**(CSPM·SIEM·DLP·EDR) 체계입니다.\n\n"
+                f"**수집 가능**\n{rdy_lines}\n\n"
                 f"**연결된 시스템**: {conn_line}\n"
                 f"**연동 예정 (PLANNED)**: {pln_line}\n\n"
-                "주의 — 위 상태·레코드 수는 데모 표시값입니다. 이 인스턴스에서 실제로 수집된 "
-                "데이터는 `/intake` 수동 업로드 증적과 원장 레코드뿐이며, 실시간 외부 연동은 "
-                "아직 구성되지 않았습니다. 특정 커넥터(예: CSPM, IAM)를 지목해 물으면 상세를 알려드립니다."
+                "실제 수집 경로: CSPM은 Prowler로 GCP 구성 진단을 실행·수집하고 "
+                "(Collection Status의 Prowler 패널), SIEM·DLP·EDR는 커넥터 연동이 필요합니다. "
+                "수집된 증적은 담당자 코멘트·조치 이력과 함께 팀장→CISO 검토·승인을 거칩니다."
             )
             links = [{"label": "Collection Status", "href": "/collection"},
                      {"label": "System Connections", "href": "/connections"}]
-            sugg = ["CSPM은 어떤 정보를 수집해?", "IAM connector는 어디서 수집해?", "실제 데이터와 합성 데이터는 뭐가 달라?"]
+            sugg = ["CSPM은 어떤 정보를 수집해?", "EDR connector는 어디서 수집해?", "실제 데이터와 합성 데이터는 뭐가 달라?"]
     elif any(k in message for k in ["차단", "민감정보", "검출", "blocked", "업로드가 안", "등록이 안", "거부"]):
         blocked = get_blocked_uploads()
         if not blocked:
