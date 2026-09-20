@@ -843,6 +843,37 @@ def _llm_grounded(question: str, doc, text: str) -> Optional[str]:
     return None
 
 
+_SENSITIVE_LABELS = {
+    "resident_id": "주민등록번호 형식 (앞 6자리-뒤 7자리)",
+    "google_api_key": "Google API 키",
+    "github_token": "GitHub 토큰",
+    "oauth_access_token": "OAuth 액세스 토큰",
+    "aws_access_key": "AWS 액세스 키",
+    "jwt_token": "JWT 토큰",
+    "private_key": "개인키(PRIVATE KEY 블록)",
+    "bearer_token": "Bearer 토큰",
+    "password_field": "평문 비밀번호 필드 (password=...)",
+    "canary_token": "카나리 토큰",
+}
+
+
+def get_blocked_uploads() -> List[Dict[str, Any]]:
+    """민감정보 검출로 차단된 업로드 시도 — 원장의 BLOCKED 레코드."""
+    out = []
+    for r in evidence_ledger._records:
+        c = r.content or {}
+        if c.get("status") == "BLOCKED_SENSITIVE":
+            out.append({
+                "record_id": r.record_id,
+                "file_name": c.get("file_name", "—"),
+                "detected": c.get("detected", []),
+                "control_id": r.control_id.replace("ISMS-P-", ""),
+                "size": c.get("size"),
+                "at": r.created_at.strftime("%Y-%m-%d %H:%M"),
+            })
+    return out
+
+
 def _llm_general(message: str, page: Optional[str]) -> Optional[str]:
     """일반 질의의 LLM 폴백 — 콘솔 런타임 상태를 컨텍스트로 실어 Gemini에 위임.
     SDK/키/호출 실패 시 None → 도움말 텍스트로 폴백."""
@@ -861,6 +892,7 @@ def _llm_general(message: str, page: Optional[str]) -> Optional[str]:
         collectors = get_collectors()
         conn = get_connections()
         docs = evidence_repo.list_documents()
+        blocked = get_blocked_uploads()
         kpis = get_kpis()
         ctx = (
             f"[심사] {audit['name']} ({audit['audit_type']}, 목표 {audit['target_date']}, D{audit['d_day']:+d})\n"
@@ -872,7 +904,11 @@ def _llm_general(message: str, page: Optional[str]) -> Optional[str]:
             f"[연결 시스템] " + "; ".join(
                 f"{s['system_id']}={s['name']}({s['status']})" for s in conn) + "\n"
             f"[업로드 증적] {len(docs)}건 · [지적사항] 총 {fs['total_findings']}건\n"
-            f"[페이지] {page or 'unknown'}\n"
+            + (f"[차단된 업로드] " + "; ".join(
+                f"{b['file_name']}(검출:{','.join(b['detected'])}, {b['at']})"
+                for b in blocked) + " — 파일은 저장되지 않음\n" if blocked
+               else "[차단된 업로드] 없음\n")
+            + f"[페이지] {page or 'unknown'}\n"
             f"[주의] 커넥터 상태·레코드 수·준비도는 데모 표시값. 실제 데이터는 업로드 증적·"
             f"원장·지적사항뿐이며 실시간 외부 연동은 미구성."
         )
@@ -1103,6 +1139,32 @@ def post_assistant(message: str, page: Optional[str] = None) -> Dict[str, Any]:
             links = [{"label": "Collection Status", "href": "/collection"},
                      {"label": "System Connections", "href": "/connections"}]
             sugg = ["CSPM은 어떤 정보를 수집해?", "IAM connector는 어디서 수집해?", "실제 데이터와 합성 데이터는 뭐가 달라?"]
+    elif any(k in message for k in ["차단", "민감정보", "검출", "blocked", "업로드가 안", "등록이 안", "거부"]):
+        blocked = get_blocked_uploads()
+        if not blocked:
+            reply = ("차단된 업로드 기록이 없습니다 — 최근 제출은 모두 통과했습니다.\n\n"
+                     "민감정보(주민등록번호·API 키·토큰·평문 비밀번호 등)가 검출되면 파일은 "
+                     "저장되지 않고 차단 사실만 불변 원장에 기록됩니다.")
+        else:
+            lines = "\n".join(
+                f"- **{b['file_name']}** — 검출: "
+                f"{', '.join(_SENSITIVE_LABELS.get(t, t) for t in b['detected'])} "
+                f"({b['at']} · 원장 {b['record_id']})"
+                for b in blocked[:5])
+            reply = (
+                f"민감정보 검출로 차단된 업로드 **{len(blocked)}건**이 원장에 기록되어 있습니다.\n\n"
+                f"{lines}\n\n"
+                "차단 시 파일은 저장되지 않습니다(차단 사실만 해시체인 원장에 기록).\n\n"
+                "**재업로드 방법**\n"
+                "1. 문서에서 검출된 민감정보를 마스킹/삭제 — 주민등록번호는 `******-*******`, "
+                "예시 비밀번호는 `********` 형태로 치환\n"
+                "2. 동일 통제를 선택해 다시 업로드\n\n"
+                "실제 주민등록번호가 포함된 문서라면 제출 자체가 개인정보보호 통제 위반일 수 있으므로, "
+                "마스킹본을 증적으로 사용하는 것이 적절합니다."
+            )
+        links = [{"label": "증적 업로드", "href": "/intake"},
+                 {"label": "증적 원장", "href": "/evidence"}]
+        sugg = ["업로드된 증적 목록 보여줘", "현재 준비도는?", "주요 GAP 보여줘"]
     elif any(k in message for k in ["확인", "퇴직", "계정", "먼저"]):
         reply = (
             f"가장 먼저 확인할 항목은 **{top['control_id']} {top['control_name']}**입니다.\n\n"
