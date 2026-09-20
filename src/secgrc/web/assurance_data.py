@@ -879,6 +879,48 @@ def post_assistant(message: str, page: Optional[str] = None) -> Dict[str, Any]:
         links = [{"label": "증적 관리", "href": "/evidence"},
                  {"label": "증적 업로드", "href": "/intake"}]
         sugg = _SUGG_DEFAULT
+    elif any(k in message for k in ["LLM", "llm", "모델", "제미니", "Gemini", "gemini", "인공지능", "어떤 AI", "API를", "API 호출"]):
+        sdk_ok = key_ok = False
+        try:
+            from google import genai  # noqa: F401
+            sdk_ok = True
+        except Exception:
+            pass
+        try:
+            from secgrc.llm import get_gemini_api_key
+            key_ok = bool(get_gemini_api_key())
+        except Exception:
+            pass
+        reply = (
+            "이 어시스턴트는 **하이브리드 구조**입니다.\n\n"
+            "- 기본 응답: 결정론적 규칙 엔진 — 의도 라우팅 + 증적·통제 조회\n"
+            "- LLM 호출: **업로드 증적의 본문 질의** 시에만 Google Gemini API 사용 "
+            "(후보 모델: gemini-2.5-flash, gemini-1.5-flash, gemini-3.6-flash)\n\n"
+            f"현재 LLM 가용 상태: SDK **{'설치됨' if sdk_ok else '미설치'}** · "
+            f"API 키 **{'설정됨' if key_ok else '미설정'}**\n\n"
+            "각 응답의 `generated_by` 표기로 실제 LLM 사용 여부를 확인할 수 있습니다 — "
+            "`llm`은 실제 API 호출, `rule`은 규칙 기반 응답입니다. "
+            "방금 이 답변처럼 `rule`로 표시된 응답은 LLM을 호출하지 않은 것입니다."
+        )
+        links = [{"label": "증적 업로드 후 본문 질의", "href": "/intake"}]
+        sugg = ["업로드된 증적 파일 본문 읽어줘", "실제 데이터와 합성 데이터는 뭐가 달라?"]
+    elif any(k in message for k in ["실제 데이터", "실제 시스템", "합성", "데모 데이터", "가짜", "진짜", "데이터 소스", "데이터를 가져오", "어디서 가져"]):
+        reply = (
+            "이 콘솔의 데이터 출처는 다음과 같이 구분됩니다.\n\n"
+            "**실제 시스템 데이터 (런타임 상태)**\n"
+            "- `/intake`에서 업로드한 증적 파일과 그 본문 (data/evidence_uploads)\n"
+            "- 증적 원장(Evidence Ledger) — SHA-256 해시체인 WORM 기록\n"
+            "- 지적사항·보완조치 상태 (audit_findings_manager의 실제 생명주기)\n\n"
+            "**데모/합성 데이터 (demo 배지 표기)**\n"
+            "- 통제 준비도·GAP 카탈로그·모집단 수치·트렌드 차트·활동 스트림\n"
+            "- 커넥터 수집 상태 표시값\n\n"
+            "외부 시스템(HR/IAM/SIEM) 실시간 수집은 커넥터 연동이 필요하며, "
+            "현재 인스턴스는 미연결 상태입니다. `demo` 배지가 없는 업로드 증적·원장·지적사항만 "
+            "실제 데이터입니다."
+        )
+        links = [{"label": "증적 관리", "href": "/evidence"},
+                 {"label": "시스템 연동 상태", "href": "/connections"}]
+        sugg = _SUGG_DEFAULT
     elif any(k in message for k in ["확인", "퇴직", "계정", "먼저"]):
         reply = (
             f"가장 먼저 확인할 항목은 **{top['control_id']} {top['control_name']}**입니다.\n\n"

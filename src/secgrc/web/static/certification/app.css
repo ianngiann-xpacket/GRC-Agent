@@ -337,6 +337,10 @@ button { font-family: inherit; }
 .assistant-close:hover { color: var(--text); }
 .assistant-drawer .assistant-body { flex: 1; overflow-y: auto; max-height: none; }
 .assistant-drawer .assistant-body::-webkit-scrollbar { width: 6px; }
+.agen-badge { display: inline-block; font-size: 9.5px; font-weight: 700; padding: 2px 7px;
+  border-radius: 999px; margin-bottom: 5px; letter-spacing: .3px; }
+.agen-badge.llm { background: var(--purple-soft); color: var(--purple); border: 1px solid #ddd6fe; }
+.agen-badge.rule { background: var(--bg); color: var(--muted); border: 1px solid var(--border); }
 
 /* ---------- Side panel ---------- */
 .side-stack { display: flex; flex-direction: column; gap: 16px; position: sticky; top: 78px; }

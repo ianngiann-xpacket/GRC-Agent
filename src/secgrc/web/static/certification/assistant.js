@@ -75,6 +75,9 @@ class AuditAssistant {
         body: JSON.stringify({ message: text, page: this.page || undefined }),
       });
       let html = this.mdLite(AS.esc(res.reply || ''));
+      // 생성 출처 배지 — LLM 실호출 vs 규칙 기반을 사용자에게 명시
+      const gen = res.generated_by === 'llm' ? 'llm' : 'rule';
+      html = `<span class="agen-badge ${gen}">${gen === 'llm' ? 'LLM 응답' : '규칙 기반'}</span>` + html;
       const links = (res.links || []).filter(l => typeof l.href === 'string' && l.href.startsWith('/'));
       if (links.length) {
         html += '<div class="amsg-links">' + links.map(l =>
