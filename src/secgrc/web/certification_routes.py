@@ -518,7 +518,10 @@ _UPLOAD_MAGIC = {
 }
 _UPLOAD_ZIP_EXT = {".xlsx", ".docx", ".pptx", ".hwpx", ".zip"}
 _UPLOAD_DOC_TYPES = {t.value for t in DocumentType}
-_RRN_PATTERN = re.compile(r"\d{6}-?[1-4]\d{6}")  # 주민등록번호 형태
+# 주민등록번호 — 숫자 경계 필수. 하이픈형은 실제 RRN 표기와 일치(바이너리 오탐 적음),
+# 무하이픈 13자리는 텍스트계열에서만 검사(PDF/ZIP 원시 바이트의 연속 숫자 오탐 방지)
+_RRN_HYPHEN = re.compile(r"(?<![\d-])\d{6}-[1-4]\d{6}(?!\d)")
+_RRN_BARE = re.compile(r"(?<!\d)\d{6}[1-4]\d{6}(?!\d)")
 # 프리뷰/리버스 프록시 경유 시 Origin과 Host가 다른 loopback 포트가 될 수 있음
 _LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
 
@@ -595,11 +598,13 @@ async def api_evidence_upload(
 
     sha256 = hashlib.sha256(body).hexdigest()
 
-    # 민감정보 스캔 — 텍스트 추출 가능 범위(512KB)에서 시크릿·주민등록번호 탐지
+    # 민감정보 스캔 — 시크릿은 원시 바이트에서도 유효(ASCII 패턴), RRN은 형식별 상이:
+    # 하이픈형(XXXXXX-XXXXXXX)은 모든 형식에서 검사, 무하이픈 13자리는 텍스트계열만
+    # (PDF·ZIP 원시 바이트의 연속 숫자열이 무하이픈 패턴에 오탐되는 문제 방지)
     sample = body[:512 * 1024].decode("utf-8", "replace")
     _, secret_found, secret_types = SecretGuard.scan_and_redact(sample)
     detected = list(secret_types)
-    if _RRN_PATTERN.search(sample):
+    if _RRN_HYPHEN.search(sample) or (ext in _PREVIEW_TEXT_EXT and _RRN_BARE.search(sample)):
         detected.append("resident_id")
 
     if detected:
