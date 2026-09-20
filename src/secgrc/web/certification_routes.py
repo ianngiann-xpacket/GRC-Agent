@@ -74,8 +74,7 @@ async def audit_control_center(request: Request, audit: Optional[str] = None) ->
     """Screen #1 — Audit Control Center (메인 랜딩)."""
     kpis = ad.get_kpis(audit)
     gaps = ad.get_gaps()
-    return templates.TemplateResponse(
-        "control_center.html",
+    return templates.TemplateResponse(request, "control_center.html",
         _ctx(request, "audit", audit,
              kpis=kpis,
              top_issues=ad.get_top_issues(5),
@@ -88,8 +87,7 @@ async def audit_control_center(request: Request, audit: Optional[str] = None) ->
 async def control_landscape(request: Request, audit: Optional[str] = None,
                             state: Optional[str] = None) -> HTMLResponse:
     """Control Landscape — 101개 통제 인터랙티브 트리."""
-    return templates.TemplateResponse(
-        "controls.html",
+    return templates.TemplateResponse(request, "controls.html",
         _ctx(request, "controls", audit,
              loaded_count=len(control_engine._controls),
              current_state=state),
@@ -103,8 +101,7 @@ async def control_detail(request: Request, control_id: str,
     detail = ad.get_control_detail(control_id)
     if detail is None:
         return RedirectResponse(url="/controls")
-    return templates.TemplateResponse(
-        "control_detail.html", _ctx(request, "controls", audit, detail=detail)
+    return templates.TemplateResponse(request, "control_detail.html", _ctx(request, "controls", audit, detail=detail)
     )
 
 
@@ -123,8 +120,7 @@ async def evidence_management(request: Request, audit: Optional[str] = None,
         }
         for r in reversed(evidence_ledger._records)
     ]
-    return templates.TemplateResponse(
-        "evidence.html",
+    return templates.TemplateResponse(request, "evidence.html",
         _ctx(request, "evidence", audit,
              records=records,
              retention=evidence_ledger.get_retention_report(),
@@ -150,8 +146,7 @@ async def gap_analysis(request: Request, audit: Optional[str] = None,
          "severity": r.severity, "description": r.description}
         for r in reconciliation_engine.results
     ]
-    return templates.TemplateResponse(
-        "gap.html",
+    return templates.TemplateResponse(request, "gap.html",
         _ctx(request, "gap", audit,
              gaps=gaps, type_counts=type_counts, sev_counts=sev_counts,
              recon_summary=reconciliation_engine.get_reconciliation_summary(),
@@ -164,8 +159,7 @@ async def findings_page(request: Request, audit: Optional[str] = None,
                         status: Optional[str] = None) -> HTMLResponse:
     """Findings & Actions — 지적사항 생명주기."""
     fv = ad.get_findings_view()
-    return templates.TemplateResponse(
-        "findings.html",
+    return templates.TemplateResponse(request, "findings.html",
         _ctx(request, "findings", audit,
              findings=fv["findings"], summary=fv["summary"], trend=fv["trend"]),
     )
@@ -174,7 +168,7 @@ async def findings_page(request: Request, audit: Optional[str] = None,
 @router.get("/replay", response_class=HTMLResponse)
 async def audit_replay(request: Request, audit: Optional[str] = None) -> HTMLResponse:
     """Audit Replay — 스크립트 심사 시뮬레이션."""
-    return templates.TemplateResponse("replay.html", _ctx(request, "replay", audit))
+    return templates.TemplateResponse(request, "replay.html", _ctx(request, "replay", audit))
 
 
 # ---------------------------------------------------------------------------
@@ -203,8 +197,7 @@ _COLLECTORS = [
 
 @router.get("/collection", response_class=HTMLResponse)
 async def collection_status(request: Request, audit: Optional[str] = None) -> HTMLResponse:
-    return templates.TemplateResponse(
-        "collection.html", _ctx(request, "collection", audit, collectors=_COLLECTORS)
+    return templates.TemplateResponse(request, "collection.html", _ctx(request, "collection", audit, collectors=_COLLECTORS)
     )
 
 
@@ -218,8 +211,7 @@ async def evidence_intake(request: Request, audit: Optional[str] = None) -> HTML
         {"doc": "계정권한_현황_원본.xlsx", "control": "2.5.1", "sensitive": True, "version": "v1.1", "passed": False},
         {"doc": "IT운영위원회_회의록.pdf", "control": "1.3.2", "sensitive": False, "version": "v2.0", "passed": True},
     ]
-    return templates.TemplateResponse(
-        "intake.html", _ctx(request, "intake", audit, controls=controls[:40], intake_checks=checks)
+    return templates.TemplateResponse(request, "intake.html", _ctx(request, "intake", audit, controls=controls[:40], intake_checks=checks)
     )
 
 
@@ -243,8 +235,7 @@ async def connections(request: Request, audit: Optional[str] = None) -> HTMLResp
         {"name": "ITSM", "system_id": "ITSM", "status": "PLANNED",
          "desc": "변경관리 티켓 (연동 예정)", "last_sync": "—"},
     ]
-    return templates.TemplateResponse(
-        "connections.html", _ctx(request, "connections", audit, systems=systems)
+    return templates.TemplateResponse(request, "connections.html", _ctx(request, "connections", audit, systems=systems)
     )
 
 
@@ -263,23 +254,20 @@ _REPORTS = [
 
 @router.get("/reports", response_class=HTMLResponse)
 async def reports(request: Request, audit: Optional[str] = None) -> HTMLResponse:
-    return templates.TemplateResponse(
-        "reports.html", _ctx(request, "reports", audit, reports=_REPORTS)
+    return templates.TemplateResponse(request, "reports.html", _ctx(request, "reports", audit, reports=_REPORTS)
     )
 
 
 @router.get("/history", response_class=HTMLResponse)
 async def audit_history(request: Request, audit: Optional[str] = None) -> HTMLResponse:
-    return templates.TemplateResponse(
-        "history.html", _ctx(request, "history", audit, audits=ad._DEMO_AUDITS)
+    return templates.TemplateResponse(request, "history.html", _ctx(request, "history", audit, audits=ad._DEMO_AUDITS)
     )
 
 
 @router.get("/criteria", response_class=HTMLResponse)
 async def isms_criteria(request: Request, audit: Optional[str] = None) -> HTMLResponse:
     land = ad.get_landscape()
-    return templates.TemplateResponse(
-        "criteria.html",
+    return templates.TemplateResponse(request, "criteria.html",
         _ctx(request, "criteria", audit,
              framework=land["domains"], loaded=len(control_engine._controls)),
     )
@@ -294,8 +282,7 @@ async def users(request: Request, audit: Optional[str] = None) -> HTMLResponse:
         {"name": "박개인", "role": "승인자", "dept": "개인정보보호팀", "scope": "잔여위험 수용 승인", "status": "ACTIVE"},
         {"name": "최인프라", "role": "관리자", "dept": "인프라팀", "scope": "커넥터·기준 버전 관리", "status": "ACTIVE"},
     ]
-    return templates.TemplateResponse(
-        "users.html", _ctx(request, "users", audit, users=user_list)
+    return templates.TemplateResponse(request, "users.html", _ctx(request, "users", audit, users=user_list)
     )
 
 
@@ -314,8 +301,7 @@ async def settings(request: Request, audit: Optional[str] = None) -> HTMLRespons
         {"name": "민감정보 검사", "value": "제출 전 자동 차단",
          "desc": "비밀번호·키·개인정보 포함 증적 제출 차단"},
     ]
-    return templates.TemplateResponse(
-        "settings.html", _ctx(request, "settings", audit, settings=cfg)
+    return templates.TemplateResponse(request, "settings.html", _ctx(request, "settings", audit, settings=cfg)
     )
 
 
