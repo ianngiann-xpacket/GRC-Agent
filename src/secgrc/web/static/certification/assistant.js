@@ -71,7 +71,8 @@ class AuditAssistant {
     const pend = this.appendMsg('bot pending', '<em>분석 중…</em>');
     try {
       const res = await AS.api('/api/audit/assistant', {
-        method: 'POST', body: JSON.stringify({ message: text }),
+        method: 'POST',
+        body: JSON.stringify({ message: text, page: this.page || undefined }),
       });
       let html = this.mdLite(AS.esc(res.reply || ''));
       const links = (res.links || []).filter(l => typeof l.href === 'string' && l.href.startsWith('/'));
@@ -96,3 +97,16 @@ class AuditAssistant {
     }
   }
 }
+
+/* 전 페이지 공통 — base.html의 플로팅 드로어 자동 초기화 */
+document.addEventListener('DOMContentLoaded', () => {
+  const drawer = document.getElementById('assistantDrawer');
+  if (!drawer || !document.getElementById('assistantBody')) return;
+  const ast = new AuditAssistant('assistantBody', 'assistantSugg', 'assistantInput', 'assistantSend');
+  ast.page = drawer.dataset.page || '';
+  ast.init();
+  const fab = document.getElementById('assistantFab');
+  if (fab) fab.addEventListener('click', () => drawer.classList.toggle('open'));
+  const close = document.getElementById('assistantClose');
+  if (close) close.addEventListener('click', () => drawer.classList.remove('open'));
+});

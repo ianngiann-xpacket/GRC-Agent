@@ -141,6 +141,40 @@ _GAP_CATALOG = [
     ("3.4.1", "MISSING_EVIDENCE", "증적부족", "개인정보 파기 확인서 표본 5건 중 1건 누락", "DB-CORE", "MEDIUM"),
 ]
 
+# 최초심사 전용 추가 GAP — 통제 수립 단계에서 발견되는 문서화/체계 구축 이슈
+_GAP_CATALOG_INIT_EXTRA = [
+    ("1.1.5", "REQUIREMENT_EVIDENCE", "미흡", "ISMS-P 문서체계 초기 수립 — 심사기준·통제 매핑표 미완성", "GRC", "CRITICAL"),
+    ("1.3.1", "MISSING_EVIDENCE", "증적부족", "경영진 검토 회의록 부재 — 최초 경영진 참여·승인 증적 필요", "GRC", "HIGH"),
+    ("2.1.1", "MISSING_EVIDENCE", "증적부족", "정보자산 식별 절차 최초 수행 기록 부재", "CMDB", "HIGH"),
+    ("3.5.2", "REQUIREMENT_EVIDENCE", "일부미흡", "개인정보 처리방침의 ISMS 체계 연계 미흡", "WEB-PORTAL", "MEDIUM"),
+]
+
+# 심사 유형별 프로필 — 감사 성격에 따라 GAP 범위·준비도를 결정론적으로 차별화
+_AUDIT_PROFILES = {
+    "AUDIT-DEMO-001": {   # 갱신심사 — 전체 통제 재평가 (기준 프로필)
+        "gap_mode": "all",
+        "readiness_factor": 1.0, "evidence_factor": 1.0, "pop_factor": 1.0,
+        "desc": "갱신심사 — 인증 범위 전체 통제의 지속적 유효성 재평가",
+        "trend_ready": "+4.2%", "trend_ev": "+6.8%",
+    },
+    "AUDIT-2025-SURV": {  # 사후심사 — 운영 지속성·표본 점검 중심
+        "gap_mode": "surveillance",
+        "readiness_factor": 1.10, "evidence_factor": 1.05, "pop_factor": 1.0,
+        "desc": "사후심사 — 인증 유지 중 운영 증적·모집단·최신성 표본 점검 중심",
+        "trend_ready": "+1.2%", "trend_ev": "+0.8%",
+    },
+    "AUDIT-2024-INIT": {  # 최초심사 — 수립 단계, 구조적 GAP 다수
+        "gap_mode": "initial",
+        "readiness_factor": 0.72, "evidence_factor": 0.60, "pop_factor": 0.85,
+        "desc": "최초심사 — 통제 수립·문서화 및 초기 증적 확보 검증 중심",
+        "trend_ready": "+9.1%", "trend_ev": "+11.3%",
+    },
+}
+
+
+def _audit_profile(audit_id: Optional[str] = None) -> Dict[str, Any]:
+    return _AUDIT_PROFILES.get(audit_id or "", _AUDIT_PROFILES["AUDIT-DEMO-001"])
+
 _FINDING_SEED = [
     # (defect_number, control_id, control_name, severity, status, title)
     ("DEF-2026-002", "2.9.4", "로그 및 접속기록 관리", "MAJOR", "OPEN", "로그 보관주기 정책-시스템 불일치"),
@@ -280,29 +314,33 @@ def get_audit_context(audit_id: Optional[str] = None) -> Dict[str, Any]:
     audit = next((a for a in _DEMO_AUDITS if a["audit_id"] == audit_id), _DEMO_AUDITS[0])
     target = datetime.strptime(audit["target_date"], "%Y-%m-%d")
     d_day = (target.date() - datetime.now().date()).days
-    return {**audit, "d_day": d_day, "audits": _DEMO_AUDITS}
+    return {**audit, "d_day": d_day, "audits": _DEMO_AUDITS,
+            "desc": _audit_profile(audit_id)["desc"]}
 
 
 def get_kpis(audit_id: Optional[str] = None, as_of: Optional[str] = None) -> Dict[str, Any]:
     ensure_demo_dataset()
+    prof = _audit_profile(audit_id)
     land = get_landscape()
     fs = audit_findings_manager.get_finding_summary()
-    n_gaps = len(_GAP_CATALOG)
-    ready = land["ready"]
+    n_gaps = len(get_gaps(audit_id=audit_id)["gaps"])
     total = land["total"]
-    ev_controls = sum(1 for d in land["domains"] for s in d["sub"]
-                      for c in s["controls"] if c["evidence_pct"] >= 50)
+    ready = min(total, round(land["ready"] * prof["readiness_factor"]))
+    ev_controls = min(total, round(
+        sum(1 for d in land["domains"] for s in d["sub"]
+            for c in s["controls"] if c["evidence_pct"] >= 50)
+        * prof["evidence_factor"]))
     actions_in_progress = fs["corrective_actions"]["by_status"].get("IN_PROGRESS", 0)
     return {
         "demo": True,
         "audit": get_audit_context(audit_id),
         "readiness": {
             "pct": round(ready / total * 100), "ready": ready, "total": total,
-            "trend": "+4.2%", "href": "/controls?state=READY",
+            "trend": prof["trend_ready"], "href": "/controls?state=READY",
         },
         "evidence": {
             "pct": round(ev_controls / total * 100), "covered": ev_controls, "total": total,
-            "trend": "+6.8%", "href": "/evidence?status=missing",
+            "trend": prof["trend_ev"], "href": "/evidence?status=missing",
         },
         "gaps": {"count": n_gaps, "trend": "-3", "href": "/gap?status=open"},
         "findings": {
@@ -423,10 +461,19 @@ def get_control_detail(control_id: str) -> Optional[Dict[str, Any]]:
 # GAP / 이슈 / 모집단 / 트렌드
 # ---------------------------------------------------------------------------
 
-def get_gaps(status: Optional[str] = None) -> Dict[str, Any]:
+def get_gaps(status: Optional[str] = None, audit_id: Optional[str] = None) -> Dict[str, Any]:
     ensure_demo_dataset()
+    mode = _audit_profile(audit_id)["gap_mode"]
+    if mode == "initial":
+        catalog = _GAP_CATALOG + _GAP_CATALOG_INIT_EXTRA
+    elif mode == "surveillance":
+        # 사후심사 — 운영 지속성 관련 GAP만 표본 점검 대상
+        keep = {"POPULATION_MISMATCH", "MISSING_EVIDENCE", "EVIDENCE_STALE", "PROCESS_GAP"}
+        catalog = [g for g in _GAP_CATALOG if g[1] in keep]
+    else:
+        catalog = _GAP_CATALOG
     gaps = []
-    for i, (cid, gtype, status_kr, desc, system, sev) in enumerate(_GAP_CATALOG, start=1):
+    for i, (cid, gtype, status_kr, desc, system, sev) in enumerate(catalog, start=1):
         name = None
         for area in ISMS_P_FRAMEWORK:
             for sub_id, _, items in area["sub"]:
@@ -447,16 +494,18 @@ def get_gaps(status: Optional[str] = None) -> Dict[str, Any]:
     return {"gaps": gaps, "total": len(gaps), "demo": True}
 
 
-def get_top_issues(limit: int = 5) -> List[Dict[str, Any]]:
+def get_top_issues(limit: int = 5, audit_id: Optional[str] = None) -> List[Dict[str, Any]]:
     sev_order = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
-    gaps = sorted(get_gaps()["gaps"], key=lambda g: sev_order.get(g["severity"], 9))
+    gaps = sorted(get_gaps(audit_id=audit_id)["gaps"], key=lambda g: sev_order.get(g["severity"], 9))
     return gaps[:limit]
 
 
-def get_population() -> Dict[str, Any]:
+def get_population(audit_id: Optional[str] = None) -> Dict[str, Any]:
+    f = _audit_profile(audit_id)["pop_factor"]
+    verified = round(1640 * f)
     return {
         "demo": True,
-        "total_assets": 1824, "verified": 1640, "exceptions": 184,
+        "total_assets": 1824, "verified": verified, "exceptions": 1824 - verified,
         "systems": 96, "iam_accounts": 2140, "privileged_accounts": 87,
         "pii_systems": 14, "processors": 9, "cloud_resources": 412,
         "evidence_population": 1824,
@@ -795,7 +844,18 @@ def _answer_control_question(message: str):
          {"label": "GAP 분석", "href": "/gap"}], sugg, "rule")
 
 
-def post_assistant(message: str) -> Dict[str, Any]:
+_PAGE_HINTS = {
+    "audit": "현재 페이지(Audit Control Center)에서는 준비도·우선 확인 항목을 물어볼 수 있습니다.",
+    "controls": "현재 페이지(Control Landscape)에서는 통제 ID로 상태를 물어볼 수 있습니다 — 예: \"2.5.4 상태는?\"",
+    "evidence": "현재 페이지(Evidence Management)에서는 증적 파일명·ID로 본문을 조회할 수 있습니다.",
+    "gap": "현재 페이지(GAP 분석)에서는 \"주요 GAP 보여줘\", \"CRITICAL 이슈는?\" 같은 질의가 유용합니다.",
+    "findings": "현재 페이지(Findings)에서는 지적사항 상태·보완조치 진행률을 물어볼 수 있습니다.",
+    "intake": "현재 페이지(Evidence Intake)에서는 \"업로드된 파일명.html 본문 읽어줘\" 같이 증적 내용을 바로 질의할 수 있습니다.",
+    "replay": "현재 페이지(Audit Replay)에서는 심사원 예상 질의를 물어볼 수 있습니다.",
+}
+
+
+def post_assistant(message: str, page: Optional[str] = None) -> Dict[str, Any]:
     """어시스턴트 의도 라우팅 — 증적 참조 > 통제 참조 > 일반 질의. 응답은 전부 advisory."""
     ensure_demo_dataset()
     top = get_top_issues(1)[0]
@@ -850,9 +910,11 @@ def post_assistant(message: str) -> Dict[str, Any]:
         links = [{"label": "준비 현황", "href": "/audit"}, {"label": "GAP 분석", "href": "/gap"}]
         sugg = _SUGG_DEFAULT
     else:
+        page_hint = _PAGE_HINTS.get(page or "", "")
         reply = (
             "ISMS-P 인증심사와 관련해 다음을 도와드릴 수 있습니다.\n\n"
-            "- 통제별 증적 현황 및 부족 항목 요약\n"
+            + (page_hint + "\n\n" if page_hint else "")
+            + "- 통제별 증적 현황 및 부족 항목 요약\n"
             "- 업로드 증적 본문 질의 — 예: \"비밀번호 관리 정책.html의 최소 길이·변경 주기를 인용해 줘\"\n"
             "- 심사원 예상 질의 시뮬레이션 (Audit Replay)\n"
             "- 지적사항·보완조치 상태 설명\n- 정합성 불일치(정책↔설정) 위치 안내\n\n"

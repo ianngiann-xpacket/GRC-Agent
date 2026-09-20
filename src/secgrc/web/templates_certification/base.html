@@ -56,6 +56,7 @@
       <div class="title">{{ audit_ctx.name if audit_ctx else 'ISMS-P 인증심사' }}</div>
       <div class="dday">D{% if audit_ctx and audit_ctx.d_day >= 0 %}-{{ audit_ctx.d_day }}{% else %}+{{ -(audit_ctx.d_day) if audit_ctx else 0 }}{% endif %}</div>
       <div class="meta">{{ audit_ctx.audit_type if audit_ctx else '갱신심사' }} · {{ audit_ctx.target_date if audit_ctx else '2026-09-30' }}</div>
+      {% if audit_ctx and audit_ctx.desc %}<div class="meta" style="font-size:10px;line-height:1.4;margin-top:2px">{{ audit_ctx.desc }}</div>{% endif %}
       <select id="auditSelector" aria-label="심사 선택">
         {% for a in (audit_ctx.audits if audit_ctx else []) %}
         <option value="{{ a.audit_id }}" {% if audit_ctx and a.audit_id == audit_ctx.audit_id %}selected{% endif %}>{{ a.audit_id }} · {{ a.audit_type }}</option>
@@ -87,7 +88,28 @@
   </div>
 </div>
 
+<!-- ============ AI 심사지원 에이전트 (전 페이지 공통) ============ -->
+<button type="button" class="assistant-fab" id="assistantFab"
+        aria-label="AI 심사지원 에이전트 열기" title="AI 심사지원">✦</button>
+<aside class="assistant assistant-drawer" id="assistantDrawer"
+       data-page="{{ active_page }}" aria-label="AI 심사지원 에이전트">
+  <div class="assistant-head">
+    <span>✦ AI 심사지원 에이전트</span>
+    <button type="button" class="assistant-close" id="assistantClose" aria-label="닫기">×</button>
+  </div>
+  <div class="assistant-body" id="assistantBody" aria-live="polite"></div>
+  <div class="assistant-input">
+    <textarea id="assistantInput" rows="3" maxlength="1000"
+      placeholder="질문 입력 — Enter 전송 · Shift+Enter 줄바꿈" aria-label="AI 심사지원 질문 입력"></textarea>
+    <button type="button" class="rbtn primary" id="assistantSend"
+      style="padding:8px 14px;font-size:12.5px;white-space:nowrap;align-self:flex-end">전송</button>
+  </div>
+  <div class="advisory">ⓘ AI 제안은 참고용이며 공식 인증 판정이 아닙니다.</div>
+  <div class="sugg" id="assistantSugg"></div>
+</aside>
+
 <script src="/static/certification/app.js"></script>
+<script src="/static/certification/assistant.js?v=3"></script>
 {% block scripts %}{% endblock %}
 </body>
 </html>

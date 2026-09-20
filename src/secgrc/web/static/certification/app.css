@@ -318,6 +318,26 @@ button { font-family: inherit; }
   padding: 9px 12px; font-size: 12px; cursor: pointer; color: var(--text-2); transition: all .15s; }
 .sugg-btn:hover { border-color: var(--purple); color: var(--purple); background: var(--purple-soft); }
 
+/* ============ AI 심사지원 — 전 페이지 플로팅 드로어 ============ */
+.assistant-fab { position: fixed; right: 24px; bottom: 24px; width: 52px; height: 52px;
+  border-radius: 50%; border: none; background: var(--purple); color: #fff; font-size: 21px;
+  cursor: pointer; box-shadow: 0 6px 20px rgba(124,58,237,.4); z-index: 900;
+  display: flex; align-items: center; justify-content: center; transition: transform .15s ease; }
+.assistant-fab:hover { transform: scale(1.07); }
+.assistant-drawer { position: fixed; top: 0; right: 0; width: 400px; max-width: 94vw; height: 100vh;
+  background: var(--surface); border-left: 1px solid var(--border); box-shadow: var(--shadow-lg);
+  transform: translateX(105%); transition: transform .22s ease; z-index: 950;
+  display: flex; flex-direction: column; }
+.assistant-drawer.open { transform: translateX(0); }
+.assistant-drawer .assistant-head { display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 16px; border-bottom: 1px solid var(--border); font-weight: 700; font-size: 13px;
+  color: var(--purple); }
+.assistant-close { background: none; border: none; font-size: 20px; color: var(--muted);
+  cursor: pointer; line-height: 1; padding: 0 4px; }
+.assistant-close:hover { color: var(--text); }
+.assistant-drawer .assistant-body { flex: 1; overflow-y: auto; max-height: none; }
+.assistant-drawer .assistant-body::-webkit-scrollbar { width: 6px; }
+
 /* ---------- Side panel ---------- */
 .side-stack { display: flex; flex-direction: column; gap: 16px; position: sticky; top: 78px; }
 .progress { height: 6px; background: #eef2f7; border-radius: 999px; overflow: hidden; }

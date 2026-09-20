@@ -107,19 +107,6 @@
 
   <!-- ============ Right rail ============ -->
   <div class="side-stack">
-    <!-- AI 심사지원 에이전트 -->
-    <div class="card assistant">
-      <div class="card-h"><div class="card-t" style="color:var(--purple)">✦ AI 심사지원 에이전트</div></div>
-      <div class="assistant-body" id="assistantBody" aria-live="polite"></div>
-      <div class="assistant-input">
-        <textarea id="assistantInput" rows="3" maxlength="1000"
-          placeholder="질문 입력 — Enter 전송 · Shift+Enter 줄바꿈" aria-label="AI 심사지원 질문 입력"></textarea>
-        <button type="button" class="rbtn primary" id="assistantSend" style="padding:8px 14px;font-size:12.5px;white-space:nowrap;align-self:flex-end">전송</button>
-      </div>
-      <div class="advisory">ⓘ AI 제안은 참고용이며 공식 인증 판정이 아닙니다.</div>
-      <div class="sugg" id="assistantSugg"></div>
-    </div>
-
     <!-- 실시간 활동 내역 -->
     <div class="card">
       <div class="card-h"><div class="card-t">실시간 활동 내역</div><span class="demo-tag">demo</span></div>
@@ -160,13 +147,11 @@
 <script src="/static/certification/chart.js"></script>
 <script src="/static/certification/landscape.js"></script>
 <script src="/static/certification/timemachine.js"></script>
-<script src="/static/certification/assistant.js?v=2"></script>
 <script>
 document.addEventListener('DOMContentLoaded', async () => {
   const land = new ControlLandscape('landscapeMount'); await land.load();
   applyStateFilter(AS.get('state'));
   const tm = new AuditTimeMachine('timeMachineMount'); await tm.init();
-  const ast = new AuditAssistant('assistantBody', 'assistantSugg', 'assistantInput', 'assistantSend'); await ast.init();
   renderLineChart(document.getElementById('trendChart'), await AS.api('/api/audit/trend'));
   AS.startActivity(document.getElementById('activityStream'));
 });

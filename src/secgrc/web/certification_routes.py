@@ -73,13 +73,13 @@ async def healthz() -> Dict[str, str]:
 async def audit_control_center(request: Request, audit: Optional[str] = None) -> HTMLResponse:
     """Screen #1 — Audit Control Center (메인 랜딩)."""
     kpis = ad.get_kpis(audit)
-    gaps = ad.get_gaps()
+    gaps = ad.get_gaps(audit_id=audit)
     return templates.TemplateResponse(request, "control_center.html",
         _ctx(request, "audit", audit,
              kpis=kpis,
-             top_issues=ad.get_top_issues(5),
+             top_issues=ad.get_top_issues(5, audit_id=audit),
              recent_gaps=gaps["gaps"][:8],
-             population=ad.get_population()),
+             population=ad.get_population(audit)),
     )
 
 
@@ -134,7 +134,7 @@ async def evidence_management(request: Request, audit: Optional[str] = None,
 async def gap_analysis(request: Request, audit: Optional[str] = None,
                        status: Optional[str] = None) -> HTMLResponse:
     """GAP Analysis — 요구↔정책↔설정↔증적↔운영 불일치."""
-    gaps = ad.get_gaps()["gaps"]
+    gaps = ad.get_gaps(audit_id=audit)["gaps"]
     type_counts: Dict[str, int] = {}
     sev_counts: Dict[str, int] = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 0}
     for g in gaps:
@@ -340,8 +340,8 @@ async def api_control(control_id: str) -> Dict[str, Any]:
 
 
 @router.get("/api/audit/gaps")
-async def api_gaps(status: Optional[str] = None) -> Dict[str, Any]:
-    return ad.get_gaps(status)
+async def api_gaps(status: Optional[str] = None, audit: Optional[str] = None) -> Dict[str, Any]:
+    return ad.get_gaps(status, audit_id=audit)
 
 
 @router.get("/api/audit/findings")
@@ -350,8 +350,8 @@ async def api_findings() -> Dict[str, Any]:
 
 
 @router.get("/api/audit/population")
-async def api_population() -> Dict[str, Any]:
-    return ad.get_population()
+async def api_population(audit: Optional[str] = None) -> Dict[str, Any]:
+    return ad.get_population(audit)
 
 
 @router.get("/api/audit/trend")
@@ -381,11 +381,12 @@ async def api_replay() -> Dict[str, Any]:
 
 class AssistantRequest(BaseModel):
     message: str
+    page: Optional[str] = None
 
 
 @router.post("/api/audit/assistant")
 async def api_assistant(body: AssistantRequest) -> Dict[str, Any]:
-    return ad.post_assistant(body.message)
+    return ad.post_assistant(body.message, page=body.page)
 
 
 class SuggestRequest(BaseModel):
