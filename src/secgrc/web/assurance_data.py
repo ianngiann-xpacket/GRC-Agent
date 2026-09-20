@@ -13,9 +13,11 @@ from __future__ import annotations
 
 import hashlib
 import html as _html
+import json as _json
 import os
 import random
 import re
+import unicodedata
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -1357,14 +1359,96 @@ def _control_names() -> Dict[str, str]:
     return names
 
 
+def _control_catalog() -> str:
+    """LLM 프롬프트용 통제항목 목록 (id + 이름, 코드순 정렬)."""
+    names = _control_names()
+    return "\n".join(
+        f"{cid} {names[cid]}"
+        for cid in sorted(names, key=lambda x: [int(p) for p in x.split(".")])
+    )
+
+
+def _llm_suggest_controls(file_name: str, sample: str) -> Optional[List[Dict[str, Any]]]:
+    """LLM 의미 분석 기반 통제 추천 — advisory 전용.
+
+    본문은 외부 API 전송 전 민감정보를 마스킹한다.
+    SDK/키/호출/파싱 실패 시 None → 호출자가 규칙 결과로 폴백한다.
+    """
+    try:
+        from secgrc.llm import get_gemini_api_key
+        api_key = get_gemini_api_key()
+        if not api_key:
+            return None
+        from google import genai
+    except Exception:
+        return None
+
+    safe_sample = ""
+    if sample:
+        try:
+            from secgrc.agent_security.secret_guard import SecretGuard
+            safe_sample, _found, _types = SecretGuard.scan_and_redact(sample[:8000])
+        except Exception:
+            safe_sample = ""
+        safe_sample = re.sub(r"\d{6}-[1-4]\d{6}", "******-*******", safe_sample)
+        safe_sample = re.sub(r"(?<!\d)\d{6}[1-4]\d{6}(?!\d)", "*************", safe_sample)
+
+    prompt = (
+        "당신은 ISMS-P 인증심사 증적 분석 어시스턴트입니다.\n"
+        "아래 [증적 파일]의 파일명과 본문 일부를 보고, 이 증적이 입증할 수 있는 통제항목을\n"
+        "[통제항목 목록]에서 최대 3개까지 고르세요.\n"
+        "- 반드시 목록에 있는 control_id만 사용하세요.\n"
+        "- 각 항목에 한국어 한 줄 근거(reason)를 적으세요.\n"
+        "- 확실한 것만 고르세요. 해당 항목이 없으면 빈 배열 []만 반환하세요.\n"
+        "- JSON 배열만 출력하고 다른 텍스트는 쓰지 마세요.\n"
+        '  예: [{"control_id":"2.5.4","reason":"비밀번호 구성·변경 기준을 정한 절차 문서"}]\n\n'
+        f"[통제항목 목록]\n{_control_catalog()}\n\n"
+        f"[증적 파일]\n파일명: {file_name}\n본문 일부:\n{safe_sample[:4000]}\n"
+    )
+    names = _control_names()
+    try:
+        client = genai.Client(api_key=api_key)
+        for model in _LLM_MODELS:
+            try:
+                r = client.models.generate_content(model=model, contents=prompt)
+                if not (r and r.text):
+                    continue
+                m = re.search(r"\[.*\]", r.text, re.S)
+                if not m:
+                    continue
+                items = _json.loads(m.group(0))
+                if not isinstance(items, list):
+                    continue
+                out: List[Dict[str, Any]] = []
+                for it in items:
+                    cid = str(it.get("control_id", "")).strip() if isinstance(it, dict) else ""
+                    if cid in names and all(o["control_id"] != cid for o in out):
+                        out.append({
+                            "control_id": cid,
+                            "name": names[cid],
+                            "reason": str(it.get("reason", ""))[:200],
+                        })
+                    if len(out) >= 3:
+                        break
+                if out:
+                    return out
+            except Exception:
+                continue
+    except Exception:
+        return None
+    return None
+
+
 def suggest_control(file_name: str, sample: str = "") -> Dict[str, Any]:
     """파일명+본문 샘플의 키워드 스코어링으로 통제항목을 추천한다.
 
     advisory 전용 — 자동 매핑이 아니라 추천이며, 최종 매핑은 사용자가 확인한다.
-    결정론적 규칙 기반(키워드·빈출어 일치)으로 근거 키워드를 함께 반환한다.
+    1차: 결정론적 규칙 기반(키워드·빈출어 일치). 신뢰도가 high가 아니면
+    2차: LLM 의미 분석으로 보강 (민감정보 마스킹 후 전송, 실패 시 규칙 결과 유지).
     """
-    file_name = (file_name or "")[:300]
-    sample = (sample or "")[:65536]
+    # macOS 드래그 파일명은 NFD(분해형 자모)로 올 수 있어 NFC로 정규화해야 한글 매칭이 된다
+    file_name = unicodedata.normalize("NFC", file_name or "")[:300]
+    sample = unicodedata.normalize("NFC", sample or "")[:65536]
     name_l = file_name.lower()
     text_l = f"{file_name}\n{sample}".lower()
 
@@ -1412,9 +1496,19 @@ def suggest_control(file_name: str, sample: str = "") -> Dict[str, Any]:
     ]
     best = top[0][1] if top else 0
     confidence = "high" if best >= 6 else ("medium" if best >= 3 else ("low" if best >= 1 else "none"))
+
+    # 키워드 신뢰도가 낮으면 LLM 의미 분석으로 보강 (advisory — 최종 매핑은 사용자 확정)
+    source = "rule"
+    if confidence != "high":
+        llm_cands = _llm_suggest_controls(file_name, sample)
+        if llm_cands:
+            candidates = llm_cands
+            source = "llm"
+            confidence = "medium"
     return {
         "candidates": candidates,
         "confidence": confidence,
+        "source": source,
         "advisory": True,
         "note": "자동 추천이며 최종 통제 매핑은 사용자가 확인합니다.",
     }

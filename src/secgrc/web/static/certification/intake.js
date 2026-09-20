@@ -149,7 +149,7 @@
     }
     const lb = document.createElement('span');
     lb.style.cssText = 'font-size:10px;color:var(--purple);font-weight:700;align-self:center';
-    lb.textContent = '추천:';
+    lb.textContent = it.source === 'llm' ? 'AI 추천:' : '추천:';
     box.appendChild(lb);
     cands.forEach((c, i) => {
       const b = document.createElement('button');
@@ -159,8 +159,9 @@
       b.style.cssText = 'font-size:10.5px;padding:3px 9px;white-space:nowrap' +
         (it.selected.has(c.control_id) ? ';border-color:var(--blue);background:var(--blue-soft);font-weight:700' : '');
       b.innerHTML = `${i === 0 ? '★ ' : ''}${AS.esc(c.control_id)} ${AS.esc(c.name)}` +
-        (c.matched?.length ? ` <span style="color:var(--muted)">(${c.matched.map(AS.esc).join('·')})</span>` : '');
-      b.title = `${c.control_id} ${c.name} — 추천 근거: ${(c.matched || []).join(', ') || '파일명 유사'} · 클릭하여 매핑 추가/해제`;
+        (c.reason ? ` <span style="color:var(--muted)">(${AS.esc(c.reason)})</span>`
+          : (c.matched?.length ? ` <span style="color:var(--muted)">(${c.matched.map(AS.esc).join('·')})</span>` : ''));
+      b.title = `${c.control_id} ${c.name} — 추천 근거: ${c.reason || (c.matched || []).join(', ') || '파일명 유사'} · 클릭하여 매핑 추가/해제`;
       b.addEventListener('click', () => {
         if (it.selected.has(c.control_id)) it.selected.delete(c.control_id);
         else it.selected.add(c.control_id);
@@ -188,11 +189,12 @@
         body: JSON.stringify({ file_name: item.file.name, sample }),
       });
       item.cands = data.candidates || [];
+      item.source = data.source || 'rule';
       renderChips(item);
       const top = item.cands[0];
       if (top && ['high', 'medium'].includes(data.confidence) && !item.userSet) {
         item.selected.add(top.control_id);
-        item.statusEl.textContent = `추천 ${top.control_id}`;
+        item.statusEl.textContent = `${item.source === 'llm' ? 'AI ' : ''}추천 ${top.control_id}`;
         item.statusEl.className = 'badge b-PARTIAL';
         item.statusEl.style.fontSize = '10px';
         syncChips(item);
