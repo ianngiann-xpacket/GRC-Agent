@@ -39,11 +39,12 @@
   function renderQueue() {
     if (!queue.length) { queueBox.innerHTML = ''; return; }
     queueBox.innerHTML = `<div style="font-size:11.5px;font-weight:700;color:var(--text-2);margin-bottom:6px">
-      업로드 대기 ${queue.length}개 — 파일별 통제를 확인한 뒤 업로드하세요</div>`;
+      업로드 대기 ${queue.length}개 — 추천 칩을 누르거나 도메인별 목록에서 통제를 선택하세요</div>`;
     queue.forEach((it, i) => {
       const row = document.createElement('div');
-      row.style.cssText = 'display:grid;grid-template-columns:minmax(140px,1.2fr) 1.4fr auto;gap:8px;' +
-        'align-items:center;padding:7px 10px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;background:#fff';
+      row.style.cssText = 'padding:7px 10px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;background:#fff';
+      const top = document.createElement('div');
+      top.style.cssText = 'display:grid;grid-template-columns:minmax(140px,1.2fr) 1.4fr auto;gap:8px;align-items:center';
       const name = document.createElement('div');
       name.style.cssText = 'min-width:0';
       name.innerHTML = `<div style="font-weight:600;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
@@ -65,11 +66,51 @@
       right.appendChild(st);
       right.appendChild(rm);
       it.statusEl = st;
-      it.ctlSel.addEventListener('change', () => { it.userSet = true; });
-      row.appendChild(name);
-      row.appendChild(it.ctlSel);
-      row.appendChild(right);
+      it.chipsEl = document.createElement('div');
+      it.chipsEl.style.cssText = 'display:flex;gap:5px;flex-wrap:wrap;margin-top:6px';
+      it.ctlSel.addEventListener('change', () => {
+        it.userSet = true;
+        it.chipsEl.querySelectorAll('button').forEach(b =>
+          b.style.borderColor = b.dataset.cid === it.ctlSel.value ? 'var(--blue)' : 'var(--border)');
+      });
+      top.appendChild(name);
+      top.appendChild(it.ctlSel);
+      top.appendChild(right);
+      row.appendChild(top);
+      row.appendChild(it.chipsEl);
       queueBox.appendChild(row);
+      renderChips(it);
+    });
+  }
+
+  // 파일별 추천 통제 칩 — 클릭 한 번으로 매핑 (추천 API 후보를 그대로 노출)
+  function renderChips(it) {
+    const box = it.chipsEl;
+    if (!box) return;
+    box.innerHTML = '';
+    const cands = (it.cands || []).slice(0, 3);
+    if (!cands.length) return;
+    const lb = document.createElement('span');
+    lb.style.cssText = 'font-size:10px;color:var(--purple);font-weight:700;align-self:center';
+    lb.textContent = '추천:';
+    box.appendChild(lb);
+    cands.forEach((c, i) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'tb-btn';
+      b.dataset.cid = c.control_id;
+      b.style.cssText = 'font-size:10.5px;padding:3px 9px;white-space:nowrap' +
+        (c.control_id === it.ctlSel.value ? ';border-color:var(--blue)' : '');
+      b.innerHTML = `${i === 0 ? '★ ' : ''}${AS.esc(c.control_id)} ${AS.esc(c.name)}` +
+        (c.matched?.length ? ` <span style="color:var(--muted)">(${c.matched.map(AS.esc).join('·')})</span>` : '');
+      b.title = `${c.control_id} ${c.name} — 추천 근거: ${(c.matched || []).join(', ') || '파일명 유사'}`;
+      b.addEventListener('click', () => {
+        it.ctlSel.value = c.control_id;
+        it.userSet = true;
+        box.querySelectorAll('button').forEach(x => { x.style.borderColor = 'var(--border)'; });
+        b.style.borderColor = 'var(--blue)';
+      });
+      box.appendChild(b);
     });
   }
 
@@ -89,12 +130,15 @@
         method: 'POST',
         body: JSON.stringify({ file_name: item.file.name, sample }),
       });
-      const top = (data.candidates || [])[0];
+      item.cands = data.candidates || [];
+      renderChips(item);
+      const top = item.cands[0];
       if (top && ['high', 'medium'].includes(data.confidence) && !item.userSet) {
         item.ctlSel.value = top.control_id;
         item.statusEl.textContent = `추천 ${top.control_id}`;
         item.statusEl.className = 'badge b-PARTIAL';
         item.statusEl.style.fontSize = '10px';
+        renderChips(item);
       }
     } catch (_) { /* 추천 실패 시 수동 선택 유지 */ }
   }

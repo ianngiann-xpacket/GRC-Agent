@@ -185,14 +185,18 @@ async def collection_status(request: Request, audit: Optional[str] = None) -> HT
 @router.get("/intake", response_class=HTMLResponse)
 async def evidence_intake(request: Request, audit: Optional[str] = None) -> HTMLResponse:
     land = ad.get_landscape()
-    controls = [c for d in land["domains"] for s in d["sub"] for c in s["controls"]]
+    # 전체 101개 통제를 도메인별 optgroup으로 — 검색·추천과 병용해 선택 부담 완화
+    control_groups = [
+        {"label": f"{d['id']}. {d['name']}", "controls": [c for s in d["sub"] for c in s["controls"]]}
+        for d in land["domains"]
+    ]
     checks = [
         {"doc": "정보보호정책_v3.2.pdf", "control": "1.1.5", "sensitive": False, "version": "v3.2", "passed": True},
         {"doc": "보안교육_실적_2026Q1.xlsx", "control": "2.2.4", "sensitive": False, "version": "v1.0", "passed": True},
         {"doc": "계정권한_현황_원본.xlsx", "control": "2.5.1", "sensitive": True, "version": "v1.1", "passed": False},
         {"doc": "IT운영위원회_회의록.pdf", "control": "1.3.2", "sensitive": False, "version": "v2.0", "passed": True},
     ]
-    return templates.TemplateResponse(request, "intake.html", _ctx(request, "intake", audit, controls=controls[:40], intake_checks=checks)
+    return templates.TemplateResponse(request, "intake.html", _ctx(request, "intake", audit, control_groups=control_groups, intake_checks=checks)
     )
 
 

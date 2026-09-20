@@ -21,11 +21,19 @@
         <div id="uploadStatus" style="display:none;margin-top:10px;padding:10px 12px;border-radius:8px;font-size:12.5px"></div>
         <div id="suggestBox" style="margin-top:10px"></div>
         <div id="uploadQueue" style="margin-top:10px"></div>
+        <div style="font-size:11px;color:var(--muted);margin-top:6px;line-height:1.6">
+          매핑이 애매하면 파일명·본문 기반 <strong>자동 추천 칩</strong>을 누르거나, 도메인별 그룹 목록에서 가장 가까운 통제를 선택하세요.
+          매핑은 등록 후 통제 상세·GAP 분석에서 다시 확인할 수 있습니다.
+        </div>
         <div style="display:grid;grid-template-columns:1.3fr 1fr auto;gap:10px;margin-top:14px">
           <div style="display:flex;gap:6px">
             <select class="tb-select" id="intakeControl" style="flex:1" aria-label="일괄 적용 통제 항목">
-              <option value="">통제 항목 선택…</option>
-              {% for c in controls %}<option value="{{ c.control_id }}">{{ c.control_id }} {{ c.name }}</option>{% endfor %}
+              <option value="">통제 항목 선택… (101개, 도메인별 그룹)</option>
+              {% for g in control_groups %}
+              <optgroup label="{{ g.label }}">
+                {% for c in g.controls %}<option value="{{ c.control_id }}">{{ c.control_id }} {{ c.name }}</option>{% endfor %}
+              </optgroup>
+              {% endfor %}
             </select>
             <button type="button" class="tb-btn" id="applyAllBtn" style="white-space:nowrap;font-size:11.5px"
                     title="선택한 통제를 대기 중인 모든 파일에 적용">전체 적용</button>
