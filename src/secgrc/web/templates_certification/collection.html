@@ -31,7 +31,10 @@
         <div id="prowlerCaps" style="margin-bottom:10px;font-size:11.5px">환경 확인 중…</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
           <input class="tb-select" id="prowlerProject" placeholder="GCP 프로젝트 ID (예: my-prod-project)"
-                 style="flex:1;min-width:220px;padding:7px 10px;font-size:12px">
+                 style="flex:1;min-width:200px;padding:7px 10px;font-size:12px">
+          <input class="tb-select" id="prowlerServices" placeholder="서비스 제한 (선택: iam,storage — 비우면 전체)"
+                 style="width:240px;padding:7px 10px;font-size:11.5px"
+                 title="쉼표로 구분. 전체 스캔은 수십 분 걸릴 수 있으니 빠른 확인은 iam 등으로 제한">
           <button class="rbtn primary" id="prowlerRunBtn" style="font-size:12px">라이브 스캔 실행</button>
           <label class="tb-btn" style="font-size:11.5px;cursor:pointer">
             결과 JSON 업로드<input type="file" id="prowlerReplayFile" accept=".json" hidden>

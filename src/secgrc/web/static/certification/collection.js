@@ -8,6 +8,7 @@
   const detailEl = document.getElementById('prowlerDetail');
   const runBtn = document.getElementById('prowlerRunBtn');
   const projInput = document.getElementById('prowlerProject');
+  const svcInput = document.getElementById('prowlerServices');
   const replayInput = document.getElementById('prowlerReplayFile');
   const msgEl = document.getElementById('prowlerMsg');
   if (!capsEl || !runsBody) return;
@@ -115,9 +116,10 @@
     runBtn.disabled = true;
     try {
       const d = await AS.api('/api/audit/collection/prowler/run', {
-        method: 'POST', body: JSON.stringify({ project_id: pid }),
+        method: 'POST', body: JSON.stringify({ project_id: pid, services: (svcInput ? svcInput.value : '') }),
       });
-      msg(`스캔 시작 — <code>${AS.esc(d.op_id)}</code> 실행 중입니다. GCP 프로젝트 규모에 따라 수 분 걸릴 수 있습니다.`, 'ok');
+      const scope = (svcInput && svcInput.value.trim()) ? `서비스 ${AS.esc(svcInput.value.trim())} 제한` : '전체 체크';
+      msg(`스캔 시작 — <code>${AS.esc(d.op_id)}</code> 실행 중 (${scope}). 프로젝트 규모에 따라 수 분~수십 분 걸릴 수 있습니다.`, 'ok');
       load();
       if (!pollTimer) pollTimer = setInterval(load, 5000);
     } catch (e) {

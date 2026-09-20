@@ -521,6 +521,7 @@ async def api_prowler_status() -> Dict[str, Any]:
 class ProwlerRunRequest(BaseModel):
     project_id: str
     organization_id: str = "default"
+    services: str = ""   # 쉼표 구분 — 비우면 전체 체크 스캔
 
 
 @router.post("/api/audit/collection/prowler/run")
@@ -544,6 +545,9 @@ async def api_prowler_run(body: ProwlerRunRequest) -> JSONResponse:
     pid = body.project_id.strip()
     if not re.fullmatch(r"[a-z][a-z0-9-]{4,28}[a-z0-9]", pid):
         return _reject("invalid_project_id", 400)
+    services = [s.strip().lower() for s in (body.services or "").split(",") if s.strip()]
+    if any(not re.fullmatch(r"[a-z0-9_]{1,40}", s) for s in services):
+        return _reject("invalid_services", 400)
 
     config = ProwlerRuntimeConfig()
     target = ProwlerGcpTarget(
@@ -562,7 +566,8 @@ async def api_prowler_run(body: ProwlerRunRequest) -> JSONResponse:
     def _work() -> None:
         try:
             run = _prowler_service().execute_scan(
-                config=config, target=target, timeout_seconds=600)
+                config=config, target=target, timeout_seconds=600,
+                services=services or None)
             _PROWLER_OPS[op_id].update(
                 status=run.status, run_id=run.run_id,
                 record_count=run.record_count, accepted=run.accepted_count)
