@@ -176,29 +176,9 @@ async def audit_replay(request: Request, audit: Optional[str] = None) -> HTMLRes
 # Data & Integration 그룹
 # ---------------------------------------------------------------------------
 
-_COLLECTORS = [
-    {"name": "HR Connector", "type": "READ-ONLY", "target": "HR-ERP (입퇴사·조직이동·겸직)",
-     "last_run": "10분 전", "records": 412, "status": "ACTIVE"},
-    {"name": "IAM Connector", "type": "READ-ONLY", "target": "AD/IAM (계정·권한·MFA·비밀번호정책)",
-     "last_run": "10분 전", "records": 2140, "status": "ACTIVE"},
-    {"name": "SIEM Connector", "type": "READ-ONLY", "target": "SIEM-01 (보안 로그·접속기록)",
-     "last_run": "10분 전", "records": 18327, "status": "ACTIVE"},
-    {"name": "CI/CD Connector", "type": "READ-ONLY", "target": "배포 이력·변경 승인",
-     "last_run": "—", "records": 0, "status": "PLANNED"},
-    {"name": "ITSM Connector", "type": "READ-ONLY", "target": "변경관리·사고 티켓",
-     "last_run": "—", "records": 0, "status": "PLANNED"},
-    {"name": "CSPM Connector", "type": "READ-ONLY", "target": "클라우드 설정 스캔",
-     "last_run": "—", "records": 0, "status": "PLANNED"},
-    {"name": "Vulnerability Scanner", "type": "READ-ONLY", "target": "취약점 스캔 결과",
-     "last_run": "—", "records": 0, "status": "PLANNED"},
-    {"name": "DLP/개인정보 Connector", "type": "READ-ONLY", "target": "개인정보처리시스템 현황",
-     "last_run": "—", "records": 0, "status": "PLANNED"},
-]
-
-
 @router.get("/collection", response_class=HTMLResponse)
 async def collection_status(request: Request, audit: Optional[str] = None) -> HTMLResponse:
-    return templates.TemplateResponse(request, "collection.html", _ctx(request, "collection", audit, collectors=_COLLECTORS)
+    return templates.TemplateResponse(request, "collection.html", _ctx(request, "collection", audit, collectors=ad.get_collectors())
     )
 
 
@@ -218,25 +198,7 @@ async def evidence_intake(request: Request, audit: Optional[str] = None) -> HTML
 
 @router.get("/connections", response_class=HTMLResponse)
 async def connections(request: Request, audit: Optional[str] = None) -> HTMLResponse:
-    systems = [
-        {"name": "Active Directory", "system_id": "AD-PROD", "status": "CONNECTED",
-         "desc": "계정·권한·비밀번호 정책 수집", "last_sync": "10분 전"},
-        {"name": "HR ERP", "system_id": "HR-ERP", "status": "CONNECTED",
-         "desc": "입퇴사·조직이동 모집단", "last_sync": "10분 전"},
-        {"name": "IAM Gateway", "system_id": "IAM-GW", "status": "CONNECTED",
-         "desc": "인증·MFA·접근권한 현황", "last_sync": "10분 전"},
-        {"name": "SIEM", "system_id": "SIEM-01", "status": "CONNECTED",
-         "desc": "로그·접속기록 수집", "last_sync": "10분 전"},
-        {"name": "VPN Gateway", "system_id": "VPN-GW", "status": "CONNECTED",
-         "desc": "원격접근 로그", "last_sync": "1시간 전"},
-        {"name": "Core DB", "system_id": "DB-CORE", "status": "CONNECTED",
-         "desc": "개인정보 저장 현황", "last_sync": "30분 전"},
-        {"name": "AWS CSPM", "system_id": "CLOUD-AWS", "status": "PLANNED",
-         "desc": "클라우드 설정 스캔 (연동 예정)", "last_sync": "—"},
-        {"name": "ITSM", "system_id": "ITSM", "status": "PLANNED",
-         "desc": "변경관리 티켓 (연동 예정)", "last_sync": "—"},
-    ]
-    return templates.TemplateResponse(request, "connections.html", _ctx(request, "connections", audit, systems=systems)
+    return templates.TemplateResponse(request, "connections.html", _ctx(request, "connections", audit, systems=ad.get_connections())
     )
 
 

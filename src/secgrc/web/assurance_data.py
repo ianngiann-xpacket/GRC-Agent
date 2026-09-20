@@ -107,6 +107,49 @@ _OWNERS = [
 ]
 _SYSTEMS = ["AD-PROD", "HR-ERP", "IAM-GW", "SIEM-01", "VPN-GW", "DB-CORE", "WEB-PORTAL", "CLOUD-AWS"]
 
+# 수집 커넥터·연동 시스템 현황 — 상태 표시값은 demo (실시간 외부 연동 미구성)
+def get_collectors() -> List[Dict[str, Any]]:
+    return [
+        {"name": "HR Connector", "type": "READ-ONLY", "target": "HR-ERP (입퇴사·조직이동·겸직)",
+         "last_run": "10분 전", "records": 412, "status": "ACTIVE"},
+        {"name": "IAM Connector", "type": "READ-ONLY", "target": "AD/IAM (계정·권한·MFA·비밀번호정책)",
+         "last_run": "10분 전", "records": 2140, "status": "ACTIVE"},
+        {"name": "SIEM Connector", "type": "READ-ONLY", "target": "SIEM-01 (보안 로그·접속기록)",
+         "last_run": "10분 전", "records": 18327, "status": "ACTIVE"},
+        {"name": "CI/CD Connector", "type": "READ-ONLY", "target": "배포 이력·변경 승인",
+         "last_run": "—", "records": 0, "status": "PLANNED"},
+        {"name": "ITSM Connector", "type": "READ-ONLY", "target": "변경관리·사고 티켓",
+         "last_run": "—", "records": 0, "status": "PLANNED"},
+        {"name": "CSPM Connector", "type": "READ-ONLY", "target": "클라우드 설정 스캔",
+         "last_run": "—", "records": 0, "status": "PLANNED"},
+        {"name": "Vulnerability Scanner", "type": "READ-ONLY", "target": "취약점 스캔 결과",
+         "last_run": "—", "records": 0, "status": "PLANNED"},
+        {"name": "DLP/개인정보 Connector", "type": "READ-ONLY", "target": "개인정보처리시스템 현황",
+         "last_run": "—", "records": 0, "status": "PLANNED"},
+    ]
+
+
+def get_connections() -> List[Dict[str, Any]]:
+    return [
+        {"name": "Active Directory", "system_id": "AD-PROD", "status": "CONNECTED",
+         "desc": "계정·권한·비밀번호 정책 수집", "last_sync": "10분 전"},
+        {"name": "HR ERP", "system_id": "HR-ERP", "status": "CONNECTED",
+         "desc": "입퇴사·조직이동 모집단", "last_sync": "10분 전"},
+        {"name": "IAM Gateway", "system_id": "IAM-GW", "status": "CONNECTED",
+         "desc": "인증·MFA·접근권한 현황", "last_sync": "10분 전"},
+        {"name": "SIEM", "system_id": "SIEM-01", "status": "CONNECTED",
+         "desc": "로그·접속기록 수집", "last_sync": "10분 전"},
+        {"name": "VPN Gateway", "system_id": "VPN-GW", "status": "CONNECTED",
+         "desc": "원격접근 로그", "last_sync": "1시간 전"},
+        {"name": "Core DB", "system_id": "DB-CORE", "status": "CONNECTED",
+         "desc": "개인정보 저장 현황", "last_sync": "30분 전"},
+        {"name": "AWS CSPM", "system_id": "CLOUD-AWS", "status": "PLANNED",
+         "desc": "클라우드 설정 스캔 (연동 예정)", "last_sync": "—"},
+        {"name": "ITSM", "system_id": "ITSM", "status": "PLANNED",
+         "desc": "변경관리 티켓 (연동 예정)", "last_sync": "—"},
+    ]
+
+
 _DEMO_AUDITS = [
     {"audit_id": "AUDIT-DEMO-001", "name": "ISMS-P 인증심사", "audit_type": "갱신심사",
      "tier": "표준인증", "target_date": "2026-09-30", "lead_auditor": "김심사", "demo": True},
@@ -927,6 +970,27 @@ def post_assistant(message: str, page: Optional[str] = None) -> Dict[str, Any]:
         links = [{"label": "증적 관리", "href": "/evidence"},
                  {"label": "시스템 연동 상태", "href": "/connections"}]
         sugg = _SUGG_DEFAULT
+    elif any(k in message for k in ["수집", "커넥터", "연동", "연결된 시스템", "어떤 시스템", "시스템에서 데이터", "데이터를 가져오는"]):
+        act = [c for c in get_collectors() if c["status"] == "ACTIVE"]
+        pln = [c for c in get_collectors() if c["status"] == "PLANNED"]
+        conn = [s for s in get_connections() if s["status"] == "CONNECTED"]
+        act_lines = "\n".join(
+            f"- **{c['name']}** → {c['target']} (마지막 수집 {c['last_run']}, {c['records']:,}건)"
+            for c in act)
+        pln_line = " · ".join(c["name"] for c in pln)
+        conn_line = " · ".join(s["system_id"] for s in conn)
+        reply = (
+            f"현재 수집 중인 커넥터는 **{len(act)}개**입니다 (표시 상태는 demo 값).\n\n"
+            f"**수집 중 (ACTIVE)**\n{act_lines}\n\n"
+            f"**연결된 시스템**: {conn_line}\n"
+            f"**연동 예정 (PLANNED)**: {pln_line}\n\n"
+            "주의 — 위 상태·레코드 수는 데모 표시값입니다. 이 인스턴스에서 실제로 수집된 "
+            "데이터는 `/intake` 수동 업로드 증적과 원장 레코드뿐이며, 실시간 외부 연동은 "
+            "아직 구성되지 않았습니다. Collection Status에서 커넥터별 상세를 확인할 수 있습니다."
+        )
+        links = [{"label": "Collection Status", "href": "/collection"},
+                 {"label": "System Connections", "href": "/connections"}]
+        sugg = ["실제 데이터와 합성 데이터는 뭐가 달라?", "증적 업로드 방법은?", "현재 준비도는?"]
     elif any(k in message for k in ["확인", "퇴직", "계정", "먼저"]):
         reply = (
             f"가장 먼저 확인할 항목은 **{top['control_id']} {top['control_name']}**입니다.\n\n"
