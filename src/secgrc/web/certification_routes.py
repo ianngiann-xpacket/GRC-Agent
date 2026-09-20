@@ -13,10 +13,13 @@ import hashlib
 import io
 import json
 import re
+import shutil
+import subprocess
+import threading
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 from urllib.parse import unquote, urlparse
 
 from fastapi import APIRouter, Request
@@ -442,6 +445,223 @@ class SuggestRequest(BaseModel):
 async def api_evidence_suggest(body: SuggestRequest) -> Dict[str, Any]:
     """파일명+본문 샘플로 통제항목을 추천한다 (advisory — 상태 변경 없음)."""
     return ad.suggest_control(body.file_name, body.sample)
+
+
+# ---------------------------------------------------------------------------
+# Prowler CSPM 연동 — 실구현 커넥터(connectors/prowler)를 콘솔에 연결한다.
+# 실행 경로: ① Docker 컨테이너 라이브 스캔 (호스트에 Docker 데몬 + GCP ADC 필요)
+#           ② 외부 실행 결과 JSON 업로드 → 정규화·원장 기록 (replay, 상시 가능)
+# ---------------------------------------------------------------------------
+
+_PROWLER_OPS: Dict[str, Dict[str, Any]] = {}   # op_id → 진행 상태 (인메모리)
+_PROWLER_INCOMING = Path("data/prowler/incoming")
+
+
+def _prowler_service():
+    from secgrc.connectors.prowler.service import get_prowler_service
+    return get_prowler_service()
+
+
+def _prowler_capabilities() -> Dict[str, Any]:
+    docker_bin = shutil.which("docker")
+    docker_running = False
+    if docker_bin:
+        try:
+            docker_running = subprocess.run(
+                [docker_bin, "info"], capture_output=True, timeout=5).returncode == 0
+        except Exception:
+            docker_running = False
+    adc = Path.home() / ".config/gcloud/application_default_credentials.json"
+    return {
+        "docker_binary": bool(docker_bin),
+        "docker_running": docker_running,
+        "adc_present": adc.exists(),
+        "live_scan_available": bool(docker_running and adc.exists()),
+    }
+
+
+def _prowler_run_summary(run) -> Dict[str, Any]:
+    return {
+        "run_id": run.run_id, "status": run.status,
+        "record_count": run.record_count, "accepted": run.accepted_count,
+        "rejected": run.rejected_count, "exit_code": run.exit_code,
+        "started_at": run.started_at, "prowler_version": run.prowler_version,
+    }
+
+
+def _prowler_ledger_record(run_id: str, project_id: str, record_count: int,
+                           manifest_hash: str, mode: str) -> None:
+    """수집 실행 자체를 불변 원장에 기록 — 수집 시각·결과 해시의 provenance."""
+    evidence_ledger.append_record(
+        evidence_id=f"CSPM-{run_id.upper()}",
+        control_id="COLLECTION-PROWLER",
+        content={
+            "kind": "prowler_collection_run", "run_id": run_id,
+            "project_id": project_id, "record_count": record_count,
+            "manifest_hash": manifest_hash, "mode": mode,
+        },
+        record_type=EvidenceRecordType.EVIDENCE,
+        created_by="web-console", collection_method="AUTOMATED",
+        source_system="Prowler-GCP",
+    )
+
+
+@router.get("/api/audit/collection/prowler")
+async def api_prowler_status() -> Dict[str, Any]:
+    svc = _prowler_service()
+    runs = [_prowler_run_summary(r) for r in svc.list_runs()]
+    runs.sort(key=lambda r: r["started_at"] or "", reverse=True)
+    return {
+        "capabilities": _prowler_capabilities(),
+        "ops": sorted(_PROWLER_OPS.values(), key=lambda o: o.get("started_at", ""), reverse=True)[:20],
+        "runs": runs[:50],
+    }
+
+
+class ProwlerRunRequest(BaseModel):
+    project_id: str
+    organization_id: str = "default"
+
+
+@router.post("/api/audit/collection/prowler/run")
+async def api_prowler_run(body: ProwlerRunRequest) -> JSONResponse:
+    """GCP 프로젝트 대상 라이브 스캔 — Docker 격리 실행, 백그라운드 스레드."""
+    from secgrc.connectors.prowler.models import (
+        GcpCredentialReference, ProwlerGcpTarget, ProwlerRuntimeConfig,
+    )
+    caps = _prowler_capabilities()
+    if not caps["live_scan_available"]:
+        reasons = []
+        if not caps["docker_binary"]:
+            reasons.append("Docker 미설치")
+        elif not caps["docker_running"]:
+            reasons.append("Docker 데몬 미실행 — Docker Desktop을 시작하세요")
+        if not caps["adc_present"]:
+            reasons.append("GCP ADC 없음 — gcloud auth application-default login 필요")
+        return _reject("live_scan_unavailable", 503, reasons=reasons,
+                       hint="Docker 없이도 '결과 파일 업로드'로 외부 실행 결과를 수집할 수 있습니다.")
+
+    pid = body.project_id.strip()
+    if not re.fullmatch(r"[a-z][a-z0-9-]{4,28}[a-z0-9]", pid):
+        return _reject("invalid_project_id", 400)
+
+    config = ProwlerRuntimeConfig()
+    target = ProwlerGcpTarget(
+        organization_id=(body.organization_id or "default").strip()[:100] or "default",
+        tenant_id="default",
+        gcp_project_ids=[pid],
+        credential_ref=GcpCredentialReference(
+            credential_ref_id="adc-default", auth_mode="ADC", project_ref=pid),
+    )
+    op_id = f"op-{uuid.uuid4().hex[:8]}"
+    _PROWLER_OPS[op_id] = {
+        "op_id": op_id, "status": "RUNNING", "project_id": pid,
+        "started_at": datetime.now().isoformat(timespec="seconds"),
+    }
+
+    def _work() -> None:
+        try:
+            run = _prowler_service().execute_scan(
+                config=config, target=target, timeout_seconds=600)
+            _PROWLER_OPS[op_id].update(
+                status=run.status, run_id=run.run_id,
+                record_count=run.record_count, accepted=run.accepted_count)
+            _prowler_ledger_record(run.run_id, pid, run.record_count,
+                                   run.provenance.get("manifest_hash", ""), "LIVE_READ_ONLY")
+        except Exception as exc:
+            _PROWLER_OPS[op_id].update(status="FAILED", error=str(exc)[:300])
+
+    threading.Thread(target=_work, daemon=True).start()
+    return JSONResponse({"ok": True, "op_id": op_id, "status": "RUNNING"})
+
+
+@router.post("/api/audit/collection/prowler/replay")
+async def api_prowler_replay(request: Request, project_id: str = "uploaded-scan") -> JSONResponse:
+    """외부에서 실행한 prowler 결과 JSON을 업로드해 정규화 — Docker/GCP 인증 불필요."""
+    from secgrc.connectors.prowler.models import (
+        GcpCredentialReference, ProwlerGcpTarget,
+    )
+    if request.headers.get("x-evidence-upload") != "1":
+        return _reject("missing_upload_header", 403)
+    origin = request.headers.get("origin")
+    if origin:
+        host = request.headers.get("host", "")
+        fwd = {h.strip() for h in request.headers.get("x-forwarded-host", "").split(",") if h.strip()}
+        if urlparse(origin).netloc not in ({host} | fwd):
+            o_host = urlparse(origin).hostname or ""
+            h_host = urlparse(f"//{host}").hostname or ""
+            if not (o_host in _LOOPBACK_HOSTS and h_host in _LOOPBACK_HOSTS):
+                return _reject("origin_mismatch", 403)
+
+    raw_name = unquote(request.headers.get("x-file-name", ""))
+    file_name = Path(raw_name).name.replace("\\", "/").split("/")[-1].strip()
+    file_name = "".join(ch for ch in file_name if ch.isalnum() or ch in " ._-()[]")
+    if not file_name.lower().endswith(".json"):
+        return _reject("extension_not_allowed", 415, ext=Path(file_name).suffix)
+
+    body = await request.body()
+    if not body or len(body) > 50 * 1024 * 1024:
+        return _reject("invalid_size", 400)
+    try:
+        json.loads(body.decode("utf-8", "replace"))
+    except Exception:
+        return _reject("invalid_json", 400)
+
+    _PROWLER_INCOMING.mkdir(parents=True, exist_ok=True)
+    saved = _PROWLER_INCOMING / f"{uuid.uuid4().hex[:12]}_{file_name}"
+    saved.write_bytes(body)
+
+    pid = project_id.strip() if re.fullmatch(r"[a-zA-Z0-9._-]{1,40}", project_id.strip()) else "uploaded-scan"
+    target = ProwlerGcpTarget(
+        organization_id="default", tenant_id="default",
+        gcp_project_ids=[pid],
+        credential_ref=GcpCredentialReference(
+            credential_ref_id="replay-upload", auth_mode="ADC", project_ref=pid),
+    )
+    try:
+        run = _prowler_service().replay(str(saved), target=target)
+    except Exception as exc:
+        return _reject("replay_failed", 400, detail=str(exc)[:200])
+
+    _prowler_ledger_record(run.run_id, pid, run.record_count,
+                           run.provenance.get("normalized_hash", ""), "REPLAY")
+    return JSONResponse({"ok": True, **_prowler_run_summary(run)})
+
+
+@router.get("/api/audit/collection/prowler/runs/{run_id}")
+async def api_prowler_run_detail(run_id: str) -> JSONResponse:
+    if not re.fullmatch(r"[A-Za-z0-9_-]{4,60}", run_id):
+        return _reject("invalid_run_id", 400)
+    svc = _prowler_service()
+    try:
+        report = svc.get_run_report(run_id)
+    except Exception:
+        return _reject("not_found", 404)
+
+    recs = svc.get_canonical_records(run_id)
+    by_severity: Dict[str, int] = {}
+    by_status: Dict[str, int] = {}
+    by_service: Dict[str, int] = {}
+    failed: Dict[str, Dict[str, Any]] = {}
+    for r in recs:
+        p = r.payload or {}
+        by_severity[p.get("source_severity", "?")] = by_severity.get(p.get("source_severity", "?"), 0) + 1
+        by_status[p.get("source_status", "?")] = by_status.get(p.get("source_status", "?"), 0) + 1
+        if p.get("service"):
+            by_service[p["service"]] = by_service.get(p["service"], 0) + 1
+        if str(p.get("source_status", "")).upper() in ("FAIL", "MUTED"):
+            cid = p.get("check_id", "?")
+            e = failed.setdefault(cid, {"check_id": cid, "count": 0,
+                                        "severity": p.get("source_severity", ""),
+                                        "description": p.get("description", "")[:160]})
+            e["count"] += 1
+    report.update({
+        "findings_by_severity": by_severity,
+        "findings_by_status": by_status,
+        "findings_by_service": dict(sorted(by_service.items(), key=lambda kv: -kv[1])[:10]),
+        "failed_checks": sorted(failed.values(), key=lambda x: -x["count"])[:15],
+    })
+    return JSONResponse(report)
 
 
 _PREVIEW_MAX_BYTES = 256 * 1024

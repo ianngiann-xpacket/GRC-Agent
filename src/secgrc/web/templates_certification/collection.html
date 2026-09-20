@@ -25,6 +25,30 @@
         </table>
       </div>
     </div>
+    <div class="card" style="margin-top:16px">
+      <div class="card-h"><div class="card-t">CSPM — Prowler GCP 실행</div><span class="badge b-PASS" style="font-size:10px">실제 연동</span></div>
+      <div class="card-b">
+        <div id="prowlerCaps" style="margin-bottom:10px;font-size:11.5px">환경 확인 중…</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
+          <input class="tb-select" id="prowlerProject" placeholder="GCP 프로젝트 ID (예: my-prod-project)"
+                 style="flex:1;min-width:220px;padding:7px 10px;font-size:12px">
+          <button class="rbtn primary" id="prowlerRunBtn" style="font-size:12px">라이브 스캔 실행</button>
+          <label class="tb-btn" style="font-size:11.5px;cursor:pointer">
+            결과 JSON 업로드<input type="file" id="prowlerReplayFile" accept=".json" hidden>
+          </label>
+        </div>
+        <div id="prowlerMsg" style="display:none;margin-bottom:10px;padding:8px 10px;border-radius:8px;font-size:12px"></div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.6">
+          라이브 스캔은 Docker 격리 컨테이너로 실행되며 읽기 전용입니다(최대 10분). Docker가 없으면
+          외부에서 실행한 <code>prowler gcp -M json</code> 결과 파일을 업로드하면 동일하게 정규화·원장 기록됩니다.
+        </div>
+        <table class="tbl">
+          <thead><tr><th>Run</th><th>상태</th><th>파인딩</th><th>수용/거부</th><th>시작</th><th></th></tr></thead>
+          <tbody id="prowlerRuns"><tr><td colspan="6" class="text-muted" style="font-size:12px">실행 이력이 없습니다.</td></tr></tbody>
+        </table>
+        <div id="prowlerDetail" style="margin-top:10px"></div>
+      </div>
+    </div>
     <div class="card" style="margin-top:16px;background:#f8fafc;border-style:dashed">
       <div class="card-b" style="font-size:12px;color:var(--text-2)">
         <strong>읽기 전용 원칙:</strong> 모든 커넥터는 조회 전용 자격증명만 사용하며 대상 시스템을 변경하지 않습니다.
@@ -41,4 +65,7 @@
     </div>
   </div>
 </div>
+{% endblock %}
+{% block scripts %}
+<script src="/static/certification/collection.js?v=1"></script>
 {% endblock %}
