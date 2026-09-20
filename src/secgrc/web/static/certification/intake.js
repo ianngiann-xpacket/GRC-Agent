@@ -39,17 +39,24 @@
   function renderQueue() {
     if (!queue.length) { queueBox.innerHTML = ''; return; }
     queueBox.innerHTML = `<div style="font-size:11.5px;font-weight:700;color:var(--text-2);margin-bottom:6px">
-      업로드 대기 ${queue.length}개 — 추천 칩을 누르거나 도메인별 목록에서 통제를 선택하세요</div>`;
+      업로드 대기 ${queue.length}개 — 추천 칩을 토글해 복수 통제에 매핑하거나 목록에서 추가하세요</div>`;
     queue.forEach((it, i) => {
       const row = document.createElement('div');
       row.style.cssText = 'padding:7px 10px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;background:#fff';
       const top = document.createElement('div');
-      top.style.cssText = 'display:grid;grid-template-columns:minmax(140px,1.2fr) 1.4fr auto;gap:8px;align-items:center';
+      top.style.cssText = 'display:grid;grid-template-columns:minmax(140px,1fr) 1.6fr auto;gap:8px;align-items:start';
       const name = document.createElement('div');
       name.style.cssText = 'min-width:0';
       name.innerHTML = `<div style="font-weight:600;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
             title="${AS.esc(it.file.name)}">${AS.esc(it.file.name)}</div>
         <div style="font-size:10.5px;color:var(--muted)">${(it.file.size / 1024).toFixed(1)} KB</div>`;
+      // 매핑 셀 — 선택된 통제 칩 + 추가용 전체 목록
+      const mapCell = document.createElement('div');
+      it.selBox = document.createElement('div');
+      it.selBox.style.cssText = 'display:flex;gap:4px;flex-wrap:wrap;margin-bottom:4px';
+      it.ctlSel.style.fontSize = '11px';
+      mapCell.appendChild(it.selBox);
+      mapCell.appendChild(it.ctlSel);
       const right = document.createElement('div');
       right.style.cssText = 'display:flex;align-items:center;gap:6px';
       const st = document.createElement('span');
@@ -69,21 +76,56 @@
       it.chipsEl = document.createElement('div');
       it.chipsEl.style.cssText = 'display:flex;gap:5px;flex-wrap:wrap;margin-top:6px';
       it.ctlSel.addEventListener('change', () => {
-        it.userSet = true;
-        it.chipsEl.querySelectorAll('button').forEach(b =>
-          b.style.borderColor = b.dataset.cid === it.ctlSel.value ? 'var(--blue)' : 'var(--border)');
+        if (it.ctlSel.value) {
+          it.selected.add(it.ctlSel.value);
+          it.ctlSel.value = '';
+          it.userSet = true;
+          syncChips(it);
+        }
       });
       top.appendChild(name);
-      top.appendChild(it.ctlSel);
+      top.appendChild(mapCell);
       top.appendChild(right);
       row.appendChild(top);
       row.appendChild(it.chipsEl);
       queueBox.appendChild(row);
+      syncChips(it);
       renderChips(it);
     });
   }
 
-  // 파일별 추천 통제 칩 — 클릭 한 번으로 매핑 (추천 API 후보를 그대로 노출)
+  // 선택된 통제 칩 — 클릭하면 매핑 해제 (1개 증적→복수 통제 매핑은 심사상 정상 패턴)
+  function renderSelected(it) {
+    it.selBox.innerHTML = '';
+    if (!it.selected.size) {
+      it.selBox.innerHTML = '<span style="font-size:10.5px;color:var(--muted)">통제 미선택 — 추천 칩을 토글하거나 아래 목록에서 추가</span>';
+      return;
+    }
+    for (const cid of it.selected) {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'tb-btn';
+      chip.style.cssText = 'font-size:10.5px;padding:3px 8px;border-color:var(--blue);' +
+        'background:var(--blue-soft);color:var(--blue);font-weight:700';
+      chip.textContent = `${cid} ✕`;
+      chip.title = `${cid} 매핑 해제`;
+      chip.addEventListener('click', () => { it.selected.delete(cid); syncChips(it); });
+      it.selBox.appendChild(chip);
+    }
+  }
+
+  function syncChips(it) {
+    renderSelected(it);
+    (it.chipsEl ? it.chipsEl : { querySelectorAll: () => [] })
+      .querySelectorAll('button[data-cid]').forEach(b => {
+        const on = it.selected.has(b.dataset.cid);
+        b.style.borderColor = on ? 'var(--blue)' : 'var(--border)';
+        b.style.background = on ? 'var(--blue-soft)' : '';
+        b.style.fontWeight = on ? '700' : '';
+      });
+  }
+
+  // 파일별 추천 통제 칩 — 토글식 복수 선택 (추천 API 후보를 그대로 노출)
   function renderChips(it) {
     const box = it.chipsEl;
     if (!box) return;
@@ -100,15 +142,15 @@
       b.className = 'tb-btn';
       b.dataset.cid = c.control_id;
       b.style.cssText = 'font-size:10.5px;padding:3px 9px;white-space:nowrap' +
-        (c.control_id === it.ctlSel.value ? ';border-color:var(--blue)' : '');
+        (it.selected.has(c.control_id) ? ';border-color:var(--blue);background:var(--blue-soft);font-weight:700' : '');
       b.innerHTML = `${i === 0 ? '★ ' : ''}${AS.esc(c.control_id)} ${AS.esc(c.name)}` +
         (c.matched?.length ? ` <span style="color:var(--muted)">(${c.matched.map(AS.esc).join('·')})</span>` : '');
-      b.title = `${c.control_id} ${c.name} — 추천 근거: ${(c.matched || []).join(', ') || '파일명 유사'}`;
+      b.title = `${c.control_id} ${c.name} — 추천 근거: ${(c.matched || []).join(', ') || '파일명 유사'} · 클릭하여 매핑 추가/해제`;
       b.addEventListener('click', () => {
-        it.ctlSel.value = c.control_id;
+        if (it.selected.has(c.control_id)) it.selected.delete(c.control_id);
+        else it.selected.add(c.control_id);
         it.userSet = true;
-        box.querySelectorAll('button').forEach(x => { x.style.borderColor = 'var(--border)'; });
-        b.style.borderColor = 'var(--blue)';
+        syncChips(it);
       });
       box.appendChild(b);
     });
@@ -134,10 +176,11 @@
       renderChips(item);
       const top = item.cands[0];
       if (top && ['high', 'medium'].includes(data.confidence) && !item.userSet) {
-        item.ctlSel.value = top.control_id;
+        item.selected.add(top.control_id);
         item.statusEl.textContent = `추천 ${top.control_id}`;
         item.statusEl.className = 'badge b-PARTIAL';
         item.statusEl.style.fontSize = '10px';
+        syncChips(item);
         renderChips(item);
       }
     } catch (_) { /* 추천 실패 시 수동 선택 유지 */ }
@@ -146,7 +189,7 @@
   function pick(fileList) {
     const files = [...fileList].slice(0, 30);
     for (const file of files) {
-      const item = { file, ctlSel: ctlSelect(), statusEl: null, userSet: false };
+      const item = { file, ctlSel: ctlSelect(), selected: new Set(), statusEl: null, userSet: false };
       queue.push(item);
       suggestFor(item);
     }
@@ -174,8 +217,8 @@
   if (applyAllBtn) applyAllBtn.addEventListener('click', () => {
     if (!queue.length) { setStatus('먼저 파일을 선택해 주세요.', 'error'); return; }
     if (!controlSel.value) { setStatus('일괄 적용할 통제 항목을 먼저 선택해 주세요.', 'error'); controlSel.focus(); return; }
-    queue.forEach(it => { it.ctlSel.value = controlSel.value; it.userSet = true; });
-    setStatus(`통제 <strong>${AS.esc(controlSel.value)}</strong>를 대기 중인 ${queue.length}개 파일에 일괄 적용했습니다.`, 'info');
+    queue.forEach(it => { it.selected.add(controlSel.value); it.userSet = true; syncChips(it); });
+    setStatus(`통제 <strong>${AS.esc(controlSel.value)}</strong>를 대기 중인 ${queue.length}개 파일에 일괄 추가했습니다.`, 'info');
   });
 
   function resultRow(name, control, sensitive, hash, ok, note) {
@@ -196,8 +239,9 @@
   }
 
   async function uploadOne(item) {
-    const controlId = item.ctlSel.value;
-    if (!controlId) { rowStatus(item, '통제 미지정', 'FAIL'); return { ok: false, skip: true }; }
+    const controlIds = [...item.selected];
+    if (!controlIds.length) { rowStatus(item, '통제 미지정', 'FAIL'); return { ok: false, skip: true }; }
+    const controlId = controlIds.join(',');
     rowStatus(item, '업로드 중…', 'IN_PROGRESS');
     try {
       const res = await fetch(
@@ -213,9 +257,10 @@
         });
       const data = await res.json();
       if (res.ok && data.ok) {
+        const n = (data.control_ids || []).length;
         tbody.insertAdjacentHTML('afterbegin',
-          resultRow(data.file_name, data.control_id, false, data.sha256, true,
-            `통과 · 원장 ${data.record_id.slice(0, 12)}`));
+          resultRow(data.file_name, (data.control_ids || [data.control_id]).join(' · '), false, data.sha256, true,
+            `통과 · ${n}개 통제 매핑`));
         rowStatus(item, '완료 ✓', 'PASS');
         return { ok: true, id: data.evidence_id };
       }
@@ -235,9 +280,9 @@
 
   async function upload() {
     if (!queue.length || uploading) return;
-    const unmapped = queue.filter(it => !it.ctlSel.value);
+    const unmapped = queue.filter(it => !it.selected.size);
     if (unmapped.length) {
-      setStatus(`${unmapped.length}개 파일에 통제 항목이 지정되지 않았습니다 — 파일별로 선택하거나 '전체 적용'을 사용하세요.`, 'error');
+      setStatus(`${unmapped.length}개 파일에 통제 항목이 지정되지 않았습니다 — 추천 칩을 토글하거나 목록에서 추가하세요.`, 'error');
       return;
     }
     uploading = true;

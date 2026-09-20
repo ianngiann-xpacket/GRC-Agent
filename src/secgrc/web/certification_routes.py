@@ -566,8 +566,12 @@ async def api_evidence_upload(
             if not (o_host in _LOOPBACK_HOSTS and h_host in _LOOPBACK_HOSTS):
                 return _reject("origin_mismatch", 403)
 
-    control_id = (control_id or "").strip()
-    if control_id not in _valid_control_ids():
+    # 다중 통제 매핑 — control_id=2.5.4,2.5.3 형태로 최대 5개까지 허용.
+    # 1개 증적이 복수 통제를 입증하는 것은 인증심사에서 정상적인 패턴.
+    valid_ids = _valid_control_ids()
+    control_ids = [c.strip() for c in (control_id or "").split(",") if c.strip()]
+    control_ids = list(dict.fromkeys(control_ids))[:5]
+    if not control_ids or any(c not in valid_ids for c in control_ids):
         return _reject("unknown_control", 400)
     if doc_type not in _UPLOAD_DOC_TYPES:
         return _reject("unknown_doc_type", 400)
@@ -610,10 +614,11 @@ async def api_evidence_upload(
     if detected:
         rec = evidence_ledger.append_record(
             evidence_id=f"BLOCKED-{uuid.uuid4().hex[:8].upper()}",
-            control_id=control_id,
+            control_id=control_ids[0],
             content={
                 "file_name": file_name, "sha256": sha256, "size": len(body),
                 "status": "BLOCKED_SENSITIVE", "detected": detected,
+                "control_ids": control_ids,
             },
             record_type=EvidenceRecordType.EVIDENCE,
             created_by="web-console", collection_method="MANUAL",
@@ -628,37 +633,49 @@ async def api_evidence_upload(
             status_code=422,
         )
 
+    # 파일은 1회만 저장 — 추가 통제는 동일 파일을 가리키는 연결 증적 생성.
+    # 매핑별 개별 증적 ID + 원장 레코드로 통제 단위 추적을 유지.
+    ugroup = uuid.uuid4().hex[:8]
     doc = _evidence_repo.upload_document(
-        io.BytesIO(body), file_name, control_id,
+        io.BytesIO(body), file_name, control_ids[0],
         DocumentType(doc_type), title=file_name,
         description="Evidence Intake 웹 업로드",
         uploaded_by="web-console",
-        metadata={"sha256": sha256, "source": "evidence-intake"},
+        metadata={"sha256": sha256, "source": "evidence-intake",
+                  "upload_group": ugroup, "control_ids": control_ids},
     )
     doc.file_hash = sha256
+    docs = [doc] + [_evidence_repo.link_to_control(doc, c) for c in control_ids[1:]]
 
-    rec = evidence_ledger.append_record(
-        evidence_id=doc.evidence_id,
-        control_id=control_id,
-        content={
-            "file_name": file_name, "sha256": sha256, "size": len(body),
-            "document_type": doc_type, "status": "RECEIVED",
-        },
-        record_type=EvidenceRecordType.EVIDENCE,
-        created_by="web-console", collection_method="MANUAL",
-        metadata={"source": "evidence-intake"},
-    )
+    record_ids = []
+    for d, cid in zip(docs, control_ids):
+        rec = evidence_ledger.append_record(
+            evidence_id=d.evidence_id,
+            control_id=cid,
+            content={
+                "file_name": file_name, "sha256": sha256, "size": len(body),
+                "document_type": doc_type, "status": "RECEIVED",
+                "upload_group": ugroup, "control_ids": control_ids,
+            },
+            record_type=EvidenceRecordType.EVIDENCE,
+            created_by="web-console", collection_method="MANUAL",
+            metadata={"source": "evidence-intake"},
+        )
+        record_ids.append(rec.record_id)
 
     return JSONResponse(
         {
             "ok": True,
             "evidence_id": doc.evidence_id,
+            "evidence_ids": [d.evidence_id for d in docs],
             "file_name": file_name,
-            "control_id": control_id,
+            "control_id": control_ids[0],
+            "control_ids": control_ids,
             "doc_type": doc_type,
             "sha256": sha256,
             "size": len(body),
-            "record_id": rec.record_id,
+            "record_id": record_ids[0],
+            "record_ids": record_ids,
             "chain_valid": evidence_ledger.verify_chain_integrity(),
             "sensitive": {"detected": False, "types": []},
             "demo": False,

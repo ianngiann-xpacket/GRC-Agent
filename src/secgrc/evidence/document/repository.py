@@ -135,6 +135,28 @@ class EvidenceRepository:
         
         return doc_evidence
 
+    def link_to_control(self, doc: DocumentEvidence, control_id: str) -> DocumentEvidence:
+        """동일 파일을 추가 통제에 연결 — 파일은 재저장하지 않고 별도 증적 레코드 생성.
+
+        1개 증적이 복수 통제를 입증하는 것은 인증심사에서 정상적인 패턴이며,
+        매핑별 개별 증적 ID를 부여해 통제 단위 조회·원장 추적을 유지한다.
+        """
+        alias = DocumentEvidence(
+            control_id=control_id,
+            document_type=doc.document_type,
+            title=doc.title,
+            description=doc.description,
+            file_path=doc.file_path,
+            file_name=doc.file_name,
+            file_size=doc.file_size,
+            uploaded_by=doc.uploaded_by,
+            metadata={**doc.metadata, "linked_from": doc.evidence_id},
+        )
+        alias.file_hash = getattr(doc, "file_hash", "")
+        self._documents[alias.evidence_id] = alias
+        self._add_to_index(control_id, alias.evidence_id)
+        return alias
+
     def add_system_evidence(self, control_id: str, source_type: str, source_system: str,
                            resource_id: str, resource_type: str, data: Dict[str, Any],
                            tags: Optional[List[str]] = None) -> SystemEvidence:
