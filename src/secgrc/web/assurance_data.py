@@ -1723,3 +1723,90 @@ def build_package(audit_id: Optional[str] = None) -> Dict[str, Any]:
         },
         "demo": True,
     }
+
+
+def build_scan_report(run_id: str, audit_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """Prowler 스캔 실행 결과 → report_render.html 계약. 실제 수집 데이터이므로 demo=False."""
+    from ..connectors.prowler.service import ProwlerGcpService
+
+    svc = ProwlerGcpService()
+    report = svc.get_run_report(run_id)
+    if not report.get("manifest"):
+        return None
+    m = report["manifest"]
+    records = svc.get_canonical_records(run_id)
+
+    by_sev: Dict[str, int] = {}
+    by_status: Dict[str, int] = {}
+    by_svc: Dict[str, int] = {}
+    for rec in records:
+        p = rec.payload or {}
+        by_sev[p.get("source_severity", "?")] = by_sev.get(p.get("source_severity", "?"), 0) + 1
+        by_status[p.get("source_status", "?")] = by_status.get(p.get("source_status", "?"), 0) + 1
+        if p.get("service"):
+            by_svc[p["service"]] = by_svc.get(p["service"], 0) + 1
+
+    def _sev(s):
+        return {"Critical": "치명", "High": "높음", "Medium": "중간", "Low": "낮음"}.get(s, s or "-")
+
+    r = _report_base("prowler_scan", "클라우드 구성 진단 결과 보고서 (Prowler)", audit_id)
+    r["demo"] = False
+    r["summary_rows"] = [
+        {"label": "스캔 상태", "value": report["status"]},
+        {"label": "수집 항목", "value": f"{report['record_count']}건 (수용 {report['accepted_count']})"},
+        {"label": "FAIL", "value": f"{by_status.get('FAIL', 0)}건"},
+        {"label": "높음+치명", "value": f"{by_sev.get('Critical', 0) + by_sev.get('High', 0)}건"},
+        {"label": "Prowler 버전", "value": report["prowler_version"]},
+        {"label": "대상 프로젝트", "value": ", ".join(m.get("project_refs") or ["-"])},
+    ]
+    tables = [
+        {
+            "title": "심각도 분포",
+            "columns": ["심각도", "건수"],
+            "rows": [[_sev(k), v] for k, v in
+                     sorted(by_sev.items(), key=lambda kv: -kv[1])] or [["-", 0]],
+        },
+        {
+            "title": "상태 분포",
+            "columns": ["상태", "건수"],
+            "rows": [[k, v] for k, v in
+                     sorted(by_status.items(), key=lambda kv: -kv[1])] or [["-", 0]],
+        },
+        {
+            "title": "서비스 분포",
+            "columns": ["서비스", "건수"],
+            "rows": [[k, v] for k, v in
+                     sorted(by_svc.items(), key=lambda kv: -kv[1])] or [["-", 0]],
+        },
+    ]
+    if records:
+        tables.append({
+            "title": f"전체 진단 결과 ({len(records)}건)",
+            "columns": ["체크", "심각도", "상태", "서비스", "리전", "리소스", "설명"],
+            "rows": [[
+                rec.payload.get("check_id", ""), _sev(rec.payload.get("source_severity")),
+                rec.payload.get("source_status", ""), rec.payload.get("service", ""),
+                rec.payload.get("region", ""), rec.payload.get("resource_id", ""),
+                (rec.payload.get("description", "") or "")[:140],
+            ] for rec in records],
+        })
+        action = [rec for rec in records if rec.payload.get("source_status") in ("FAIL", "MANUAL")]
+        if action:
+            tables.append({
+                "title": f"조치 검토 대상 ({len(action)}건 — FAIL·MANUAL)",
+                "columns": ["체크", "심각도", "상태", "권고 조치"],
+                "rows": [[
+                    rec.payload.get("check_id", ""), _sev(rec.payload.get("source_severity")),
+                    rec.payload.get("source_status", ""),
+                    (rec.payload.get("remediation_guidance", "") or "-")[:180],
+                ] for rec in action],
+            })
+    r["tables"] = tables
+    r["notes"] = [
+        "본 보고서는 Prowler 읽기전용 스캔의 실제 수집 결과입니다. 데모 데이터가 아닙니다.",
+        f"원시 출력 해시(SHA-256): {m.get('raw_output_hash', '-')}",
+        f"정규화 출력 해시: {m.get('normalized_output_hash', '-')} · 매니페스트 해시: {m.get('manifest_hash', '-')}",
+        f"실행 이미지: {m.get('runtime_image', '-')} · 매핑 버전: {m.get('mapping_version', '-')}",
+        "판정 지위: NON_AUTHORITATIVE / NOT_EVALUATED — 진단 결과는 관찰 증거이며 통제 충족 판정이 아닙니다. ISMS-P 통제와의 매핑·충족 여부는 담당자 검토 후 별도 확정합니다.",
+    ]
+    return r

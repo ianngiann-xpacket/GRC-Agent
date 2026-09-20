@@ -60,7 +60,12 @@
         <td class="mono">${r.record_count}</td>
         <td class="mono" style="font-size:11px">${r.accepted}/${r.rejected}</td>
         <td class="mono" style="font-size:11px">${AS.esc((r.started_at || '').slice(5, 19).replace('T', ' '))}</td>
-        <td><button type="button" class="tb-btn" style="font-size:10.5px;padding:2px 8px" data-run="${AS.esc(r.run_id)}">리포트</button></td>
+        <td style="white-space:nowrap">
+          <button type="button" class="tb-btn" style="font-size:10.5px;padding:2px 8px" data-run="${AS.esc(r.run_id)}">요약</button>
+          <a class="tb-btn" style="font-size:10.5px;padding:2px 8px;display:inline-block"
+             href="/collection/prowler/runs/${encodeURIComponent(r.run_id)}/report${new URLSearchParams(location.search).get('audit') ? '?audit=' + encodeURIComponent(new URLSearchParams(location.search).get('audit')) : ''}"
+             target="_blank" rel="noopener">보고서</a>
+        </td>
       </tr>`);
     }
     runsBody.innerHTML = rows.length ? rows.join('')
@@ -85,7 +90,7 @@
   }
 
   async function loadDetail(runId) {
-    detailEl.innerHTML = '<span style="font-size:11.5px;color:var(--muted)">리포트 로딩 중…</span>';
+    detailEl.innerHTML = '<span style="font-size:11.5px;color:var(--muted)">요약 로딩 중…</span>';
     try {
       const r = await AS.api(`/api/audit/collection/prowler/runs/${encodeURIComponent(runId)}`);
       const sev = Object.entries(r.findings_by_severity || {}).map(([k, v]) => `${AS.esc(k)} ${v}`).join(' · ') || '—';
@@ -106,7 +111,7 @@
           <div style="font-size:10.5px;color:var(--muted);margin-top:6px">원시·정규화 결과는 data/prowler/ 아래 run 디렉터리에 보존되며, 매니페스트 해시로 무결성을 검증할 수 있습니다. 파인딩은 관측값(non-authoritative)이며 통제 판정은 별도 분석이 필요합니다.</div>
         </div></div>`;
     } catch (e) {
-      detailEl.innerHTML = `<span style="font-size:11.5px;color:var(--red)">리포트 조회 실패 — ${AS.esc(e.message)}</span>`;
+      detailEl.innerHTML = `<span style="font-size:11.5px;color:var(--red)">요약 조회 실패 — ${AS.esc(e.message)}</span>`;
     }
   }
 

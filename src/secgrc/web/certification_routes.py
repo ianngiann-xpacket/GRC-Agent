@@ -669,6 +669,18 @@ async def api_prowler_run_detail(run_id: str) -> JSONResponse:
     return JSONResponse(report)
 
 
+@router.get("/collection/prowler/runs/{run_id}/report")
+async def prowler_run_report(request: Request, run_id: str,
+                             audit: Optional[str] = None) -> Any:
+    """Prowler 스캔 결과를 인쇄 가능한 보고서로 렌더링 (증적 제출용 문서)."""
+    if not re.fullmatch(r"[A-Za-z0-9_-]{4,60}", run_id):
+        return RedirectResponse(url="/collection")
+    data = ad.build_scan_report(run_id, audit)
+    if data is None:
+        return RedirectResponse(url="/collection")
+    return templates.TemplateResponse(request, "report_render.html", {"request": request, "r": data})
+
+
 _PREVIEW_MAX_BYTES = 256 * 1024
 _PREVIEW_TEXT_EXT = {".txt", ".md", ".csv", ".log", ".json", ".html", ".htm"}
 
