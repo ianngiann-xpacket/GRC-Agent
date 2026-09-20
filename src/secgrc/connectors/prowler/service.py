@@ -157,6 +157,16 @@ class ProwlerGcpService:
                 timeout_seconds=timeout_seconds,
                 mock_mode=True,
             )
+        elif os.environ.get("PROWLER_EXECUTION_MODE", "").lower() == "cloudrun":
+            # GCP 배포 환경 — Cloud Run Job 실행 후 GCS에서 산출물 회수
+            from secgrc.connectors.prowler.gcp_runner import ProwlerCloudRunJobRunner
+            exec_res = ProwlerCloudRunJobRunner.execute(
+                config=config,
+                command_spec=spec,
+                run_id=run_id,
+                host_output_dir=str(run_raw_dir),
+                timeout_seconds=max(timeout_seconds, 1800),
+            )
         else:
             exec_res = ProwlerDockerRunner.execute(
                 config=config,

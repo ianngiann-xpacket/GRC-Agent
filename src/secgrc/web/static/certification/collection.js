@@ -29,10 +29,17 @@
   }
 
   function renderCaps(c) {
-    capsEl.innerHTML =
-      capBadge('Docker', c.docker_running, c.docker_binary ? (c.docker_running ? '데몬 실행 중' : 'Docker Desktop을 시작하세요') : 'Docker 미설치') + ' ' +
-      capBadge('GCP 인증(ADC)', c.adc_present, c.adc_present ? 'application_default_credentials.json' : 'gcloud auth application-default login 필요') + ' ' +
-      capBadge('라이브 스캔', c.live_scan_available, c.live_scan_available ? '실행 가능' : 'Docker + ADC 모두 필요 — 또는 결과 JSON 업로드 사용');
+    if (c.execution_mode === 'cloudrun') {
+      capsEl.innerHTML =
+        capBadge('실행 방식', true, 'Cloud Run Job (GCP 배포 모드)') + ' ' +
+        capBadge('Job 구성', c.cloudrun_configured, c.cloudrun_configured ? 'PROWLER_JOB_NAME·REGION·GCS_BUCKET 설정됨' : 'Job 환경변수 미설정') + ' ' +
+        capBadge('라이브 스캔', c.live_scan_available, c.live_scan_available ? '실행 가능 — Cloud Run Job으로 스캔' : 'Job 환경변수를 설정하세요');
+    } else {
+      capsEl.innerHTML =
+        capBadge('Docker', c.docker_running, c.docker_binary ? (c.docker_running ? '데몬 실행 중' : 'Docker Desktop을 시작하세요') : 'Docker 미설치') + ' ' +
+        capBadge('GCP 인증(ADC)', c.adc_present, c.adc_present ? 'application_default_credentials.json' : 'gcloud auth application-default login 필요') + ' ' +
+        capBadge('라이브 스캔', c.live_scan_available, c.live_scan_available ? '실행 가능' : 'Docker + ADC 모두 필요 — 또는 결과 JSON 업로드 사용');
+    }
     if (runBtn) runBtn.disabled = !c.live_scan_available;
   }
 

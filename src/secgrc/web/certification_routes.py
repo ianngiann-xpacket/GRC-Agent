@@ -12,6 +12,7 @@
 import hashlib
 import io
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -463,6 +464,10 @@ def _prowler_service():
 
 
 def _prowler_capabilities() -> Dict[str, Any]:
+    cloudrun = os.environ.get("PROWLER_EXECUTION_MODE", "").lower() == "cloudrun"
+    cloudrun_ready = cloudrun and all(
+        os.environ.get(k) for k in
+        ("PROWLER_JOB_NAME", "PROWLER_JOB_REGION", "PROWLER_GCS_BUCKET"))
     docker_bin = shutil.which("docker")
     docker_running = False
     if docker_bin:
@@ -473,10 +478,12 @@ def _prowler_capabilities() -> Dict[str, Any]:
             docker_running = False
     adc = Path.home() / ".config/gcloud/application_default_credentials.json"
     return {
+        "execution_mode": "cloudrun" if cloudrun else "docker",
         "docker_binary": bool(docker_bin),
         "docker_running": docker_running,
         "adc_present": adc.exists(),
-        "live_scan_available": bool(docker_running and adc.exists()),
+        "cloudrun_configured": cloudrun_ready,
+        "live_scan_available": cloudrun_ready or bool(docker_running and adc.exists()),
     }
 
 
@@ -533,12 +540,17 @@ async def api_prowler_run(body: ProwlerRunRequest) -> JSONResponse:
     caps = _prowler_capabilities()
     if not caps["live_scan_available"]:
         reasons = []
-        if not caps["docker_binary"]:
-            reasons.append("Docker 미설치")
-        elif not caps["docker_running"]:
-            reasons.append("Docker 데몬 미실행 — Docker Desktop을 시작하세요")
-        if not caps["adc_present"]:
-            reasons.append("GCP ADC 없음 — gcloud auth application-default login 필요")
+        if caps["execution_mode"] == "cloudrun":
+            reasons.append(
+                "Cloud Run Job 미구성 — PROWLER_JOB_NAME·PROWLER_JOB_REGION·"
+                "PROWLER_GCS_BUCKET 환경변수를 확인하세요")
+        else:
+            if not caps["docker_binary"]:
+                reasons.append("Docker 미설치")
+            elif not caps["docker_running"]:
+                reasons.append("Docker 데몬 미실행 — Docker Desktop을 시작하세요")
+            if not caps["adc_present"]:
+                reasons.append("GCP ADC 없음 — gcloud auth application-default login 필요")
         return _reject("live_scan_unavailable", 503, reasons=reasons,
                        hint="Docker 없이도 '결과 파일 업로드'로 외부 실행 결과를 수집할 수 있습니다.")
 
