@@ -18,7 +18,13 @@ class EvidenceType(str, Enum):
 
 
 class DocumentType(str, Enum):
-    """문서 증적 유형"""
+    """문서 증적 유형 — 수작업 등록 카테고리(심사 증적 분류)"""
+    POLICY_PROCEDURE = "POLICY_PROCEDURE"         # 정책·절차서
+    MEETING_REVIEW = "MEETING_REVIEW"             # 회의록·검토 보고서
+    PENTEST_VULN = "PENTEST_VULN"                 # 모의해킹·취약점 진단 결과 보고서
+    TRAINING = "TRAINING"                         # 교육·훈련 계획 및 결과
+    PHYSICAL_HR = "PHYSICAL_HR"                   # 기타 물리·인적 증적
+    # 기존 값 — 등록된 증적과의 호환을 위해 유지
     POLICY = "POLICY"               # 정책 문서
     PROCEDURE = "PROCEDURE"         # 절차서
     MEETING_MINUTES = "MEETING_MINUTES" # 회의록

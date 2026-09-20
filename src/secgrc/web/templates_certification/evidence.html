@@ -42,7 +42,7 @@
       <div class="card-b" style="padding:0 0 6px">
         <div style="overflow-x:auto">
         <table class="tbl">
-          <thead><tr><th>레코드 ID</th><th>증적 ID</th><th>통제</th><th>유형</th><th>수집</th><th>생성자</th><th>생성 시각</th><th>해시</th><th></th></tr></thead>
+          <thead><tr><th>레코드 ID</th><th>증적 ID</th><th>통제</th><th>유형</th><th>수집</th><th>승인 단계</th><th>생성자</th><th>생성 시각</th><th>해시</th><th></th></tr></thead>
           <tbody>
             {% for r in records %}
             <tr data-go="/controls/{{ r.control_id }}" tabindex="0" role="button">
@@ -51,14 +51,21 @@
               <td style="font-weight:600">{{ r.control_id }}</td>
               <td><span class="badge b-info">{{ r.record_type }}</span></td>
               <td class="mono" style="font-size:11px;color:{{ 'var(--green)' if r.collection_method == 'AUTOMATIC' else 'var(--purple)' }}">{{ r.collection_method }}</td>
+              <td>{% if r.stage %}<span class="badge" style="font-size:10px;{% if r.stage == 'APPROVED' %}background:var(--green-soft);color:var(--green){% elif r.stage == 'REJECTED' %}background:var(--red-soft);color:var(--red){% else %}background:var(--amber-soft);color:var(--amber){% endif %}">{{ r.stage_label }}</span>{% else %}<span style="color:var(--muted);font-size:11px">—</span>{% endif %}</td>
               <td style="font-size:12px">{{ r.created_by }}</td>
               <td class="mono" style="font-size:11px">{{ r.created_at }}</td>
               <td class="mono" style="font-size:10px;color:var(--muted)">{{ r.hash[:24] }}…</td>
-              <td><button type="button" class="tb-btn" data-preview="{{ r.evidence_id }}"
-                      style="font-size:10.5px;padding:4px 9px" aria-label="{{ r.evidence_id }} 원문 미리보기">보기</button></td>
+              <td style="white-space:nowrap">
+                <button type="button" class="tb-btn" data-preview="{{ r.evidence_id }}"
+                        style="font-size:10.5px;padding:4px 9px" aria-label="{{ r.evidence_id }} 원문 미리보기">보기</button>
+                {% if r.record_type == 'EVIDENCE' %}
+                <button type="button" class="tb-btn" data-review="{{ r.evidence_id }}"
+                        style="font-size:10.5px;padding:4px 9px" aria-label="{{ r.evidence_id }} 검토·승인">검토</button>
+                {% endif %}
+              </td>
             </tr>
             {% else %}
-            <tr><td colspan="9" style="padding:0;border-bottom:none">
+            <tr><td colspan="10" style="padding:0;border-bottom:none">
               <div style="text-align:center;padding:36px 20px">
                 <div style="font-size:30px;margin-bottom:10px">▤</div>
                 <div style="font-weight:700;font-size:14px;margin-bottom:6px">아직 등록된 증적이 없습니다</div>
@@ -143,4 +150,59 @@
     </div>
   </div>
 </div>
+
+<!-- 검토·승인 패널 — 담당자 → 팀장 → CISO -->
+<div id="reviewModal" hidden
+     style="position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:60;display:flex;align-items:center;justify-content:center">
+  <div style="background:#fff;border-radius:14px;width:640px;max-width:94vw;max-height:88vh;overflow-y:auto;box-shadow:0 20px 50px rgba(15,23,42,.25)">
+    <div style="padding:18px 22px;border-bottom:1px solid #e3e8f0;display:flex;justify-content:space-between;align-items:center">
+      <div>
+        <div id="reviewTitle" style="font-weight:800;font-size:15px">검토·승인</div>
+        <div id="reviewStage" style="font-size:12px;margin-top:3px"></div>
+      </div>
+      <button type="button" id="reviewClose" class="tb-btn" style="font-size:12px">닫기</button>
+    </div>
+    <div style="padding:18px 22px">
+      <div style="display:flex;gap:6px;margin-bottom:16px" id="reviewSteps"></div>
+
+      <div id="reviewAction" style="border:1px solid #e3e8f0;border-radius:10px;padding:14px;margin-bottom:14px">
+        <div style="font-size:12px;font-weight:700;margin-bottom:8px">결재 처리</div>
+        <div style="display:flex;gap:8px;margin-bottom:8px">
+          <select id="reviewRole" class="tb-select" style="width:110px">
+            <option value="TEAM_LEAD">팀장</option>
+            <option value="CISO">CISO</option>
+            <option value="OWNER">담당자</option>
+          </select>
+          <input id="reviewActor" class="tb-select" style="flex:1" placeholder="이름 (예: 김팀장)">
+        </div>
+        <textarea id="reviewComment" class="tb-select" rows="2" style="width:100%;resize:vertical" placeholder="의견 (반려 시 사유 필수)"></textarea>
+        <div id="reviewBtns" style="display:flex;gap:8px;margin-top:8px"></div>
+        <div id="reviewMsg" style="font-size:11.5px;margin-top:8px;display:none"></div>
+      </div>
+
+      <div style="font-size:12px;font-weight:700;margin-bottom:6px">코멘트</div>
+      <div id="reviewComments" style="margin-bottom:10px"></div>
+      <div style="display:flex;gap:8px;margin-bottom:14px">
+        <input id="commentText" class="tb-select" style="flex:1" placeholder="담당자 코멘트 입력…">
+        <button type="button" id="commentBtn" class="tb-btn" style="font-size:11px;white-space:nowrap">등록</button>
+      </div>
+
+      <div style="font-size:12px;font-weight:700;margin-bottom:6px">조치 이력</div>
+      <div id="reviewActions" style="margin-bottom:10px"></div>
+      <div style="display:flex;gap:8px">
+        <select id="actionStatus" class="tb-select" style="width:120px">
+          <option value="DONE">완료</option>
+          <option value="IN_PROGRESS">진행 중</option>
+          <option value="PLANNED">예정</option>
+        </select>
+        <input id="actionDetail" class="tb-select" style="flex:1" placeholder="조치 내용 (자동 수집 증적 대응 등)…">
+        <button type="button" id="actionBtn" class="tb-btn" style="font-size:11px;white-space:nowrap">기록</button>
+      </div>
+
+      <div style="font-size:12px;font-weight:700;margin:16px 0 6px">결재 이력 (불변 원장)</div>
+      <div id="reviewHistory"></div>
+    </div>
+  </div>
+</div>
+<script src="/static/certification/evidence.js?v=1"></script>
 {% endblock %}

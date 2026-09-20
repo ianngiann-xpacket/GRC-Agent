@@ -67,13 +67,13 @@ const AS = (() => {
     const activate = el => go(el.dataset.go, el.dataset.goAudit !== undefined
       ? { audit: el.dataset.goAudit } : {});
     document.addEventListener('click', e => {
-      if (e.target.closest('a[href],[data-preview],[data-gapreg]')) return;
+      if (e.target.closest('a[href],[data-preview],[data-gapreg],[data-review]')) return;
       const t = e.target.closest('[data-go]');
       if (t) activate(t);
     });
     document.addEventListener('keydown', e => {
       if (e.key !== 'Enter') return;
-      if (e.target.closest('a[href],[data-preview],[data-gapreg]')) return;
+      if (e.target.closest('a[href],[data-preview],[data-gapreg],[data-review]')) return;
       const t = e.target.closest('[data-go]');
       if (t) activate(t);
     });

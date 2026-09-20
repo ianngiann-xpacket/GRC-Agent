@@ -32,6 +32,7 @@ from secgrc.audit_findings.manager import FindingSeverity, audit_findings_manage
 from secgrc.control_engine.engine import control_engine
 from secgrc.evidence.document.repository import DocumentType
 from secgrc.evidence.ledger import EvidenceRecordType, evidence_ledger
+from secgrc.evidence.review_workflow import EvidenceReviewWorkflow
 from secgrc.reconciliation.engine import reconciliation_engine
 from secgrc.web import assurance_data as ad
 
@@ -125,6 +126,16 @@ async def evidence_management(request: Request, audit: Optional[str] = None,
         }
         for r in reversed(evidence_ledger._records)
     ]
+    # 증적별 승인 단계 — 원장 REVIEW 레코드에서 도출 (EVIDENCE 레코드에만 표시)
+    stage_cache: Dict[str, Dict[str, str]] = {}
+    for rec in records:
+        eid = rec["evidence_id"]
+        if rec["record_type"] != "EVIDENCE":
+            continue
+        if eid not in stage_cache:
+            st = _review_workflow.get_state(eid)
+            stage_cache[eid] = {"stage": st["stage"], "stage_label": st["stage_label"]}
+        rec.update(stage_cache[eid])
     return templates.TemplateResponse(request, "evidence.html",
         _ctx(request, "evidence", audit,
              records=records,
@@ -750,6 +761,98 @@ async def api_evidence_preview(evidence_id: str) -> Any:
 
 
 # ---------------------------------------------------------------------------
+# 증적 검토·승인 워크플로우 — 담당자 → 팀장 → CISO (원장 REVIEW 레코드 기반)
+# ---------------------------------------------------------------------------
+
+_review_workflow = EvidenceReviewWorkflow(evidence_ledger)
+
+
+def _evidence_control_id(evidence_id: str) -> Optional[str]:
+    rec = next((r for r in evidence_ledger._records
+                if r.evidence_id.upper() == evidence_id.upper()), None)
+    return rec.control_id if rec else None
+
+
+class ReviewActionRequest(BaseModel):
+    action: str                     # approve | reject | resubmit
+    actor: str
+    role: str                       # OWNER | TEAM_LEAD | CISO
+    comment: str = ""
+
+
+class CommentRequest(BaseModel):
+    actor: str
+    role: str = "OWNER"
+    text: str
+
+
+class ActionLogRequest(BaseModel):
+    actor: str
+    action_type: str = "조치"       # 조치 | 확인 | 예외승인 등
+    detail: str
+    status: str = "DONE"            # DONE | PLANNED | IN_PROGRESS
+
+
+@router.get("/api/audit/evidence/{evidence_id}/review")
+async def api_evidence_review_state(evidence_id: str) -> Any:
+    if _evidence_control_id(evidence_id) is None:
+        return _reject("not_found", 404)
+    return _review_workflow.get_state(evidence_id)
+
+
+@router.post("/api/audit/evidence/{evidence_id}/review")
+async def api_evidence_review_action(evidence_id: str,
+                                     body: ReviewActionRequest) -> JSONResponse:
+    control_id = _evidence_control_id(evidence_id)
+    if control_id is None:
+        return _reject("not_found", 404)
+    if not body.actor.strip():
+        return _reject("actor_required", 400)
+    try:
+        state = _review_workflow.transition(
+            evidence_id, control_id, body.action.lower().strip(),
+            body.actor.strip(), body.role, body.comment)
+    except (ValueError, KeyError) as e:
+        return _reject("invalid_transition", 400, detail=str(e))
+    return JSONResponse({"ok": True, **state})
+
+
+@router.post("/api/audit/evidence/{evidence_id}/comment")
+async def api_evidence_comment(evidence_id: str,
+                               body: CommentRequest) -> JSONResponse:
+    control_id = _evidence_control_id(evidence_id)
+    if control_id is None:
+        return _reject("not_found", 404)
+    if not body.actor.strip():
+        return _reject("actor_required", 400)
+    try:
+        state = _review_workflow.add_comment(
+            evidence_id, control_id, body.actor.strip(),
+            body.role, body.text)
+    except (ValueError, KeyError) as e:
+        return _reject("invalid_comment", 400, detail=str(e))
+    return JSONResponse({"ok": True, **state})
+
+
+@router.post("/api/audit/evidence/{evidence_id}/action")
+async def api_evidence_action(evidence_id: str,
+                              body: ActionLogRequest) -> JSONResponse:
+    """자동 수집 증적의 담당자 조치 이력 — 원장에 불변 기록."""
+    control_id = _evidence_control_id(evidence_id)
+    if control_id is None:
+        return _reject("not_found", 404)
+    if not body.actor.strip():
+        return _reject("actor_required", 400)
+    try:
+        state = _review_workflow.add_action(
+            evidence_id, control_id, body.actor.strip(),
+            body.action_type, body.detail, body.status)
+    except (ValueError, KeyError) as e:
+        return _reject("invalid_action", 400, detail=str(e))
+    return JSONResponse({"ok": True, **state})
+
+
+# ---------------------------------------------------------------------------
 # 증적 파일 업로드 (Evidence Intake) — raw-body 방식, multipart 의존성 없음
 # ---------------------------------------------------------------------------
 
@@ -789,7 +892,7 @@ def _reject(reason: str, status: int, **extra) -> JSONResponse:
 
 @router.post("/api/audit/evidence/upload")
 async def api_evidence_upload(
-    request: Request, control_id: str = "", doc_type: str = "POLICY"
+    request: Request, control_id: str = "", doc_type: str = "POLICY_PROCEDURE"
 ) -> JSONResponse:
     """증적 파일 업로드 — 검증 → 민감정보 스캔 → 저장 → 불변 원장 기록.
 
