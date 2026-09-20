@@ -83,7 +83,14 @@ class ProwlerCloudRunJobRunner:
         resp = session.post(url, json=body, timeout=30)
         if resp.status_code != 200:
             raise RuntimeError(f"Cloud Run Job 실행 요청 실패 ({resp.status_code}): {resp.text[:400]}")
-        return resp.json()["name"]  # namespaces/{p}/executions/{exec}
+        doc = resp.json()
+        # v1 jobs:run은 Execution 리소스를 반환 — 이름은 metadata.name 아래
+        name = (doc.get("metadata") or {}).get("name") or doc.get("name")
+        if not name:
+            raise RuntimeError(f"Job 실행 응답에 실행 이름 없음: {json.dumps(doc)[:400]}")
+        if "/" not in name:
+            name = f"namespaces/{project}/executions/{name}"
+        return name  # namespaces/{p}/executions/{exec}
 
     @classmethod
     def _wait(cls, session: AuthorizedSession, exec_name: str,
