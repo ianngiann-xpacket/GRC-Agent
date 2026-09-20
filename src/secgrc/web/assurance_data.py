@@ -107,25 +107,50 @@ _OWNERS = [
 ]
 _SYSTEMS = ["AD-PROD", "HR-ERP", "IAM-GW", "SIEM-01", "VPN-GW", "DB-CORE", "WEB-PORTAL", "CLOUD-AWS"]
 
-# 수집 커넥터·연동 시스템 현황 — 상태 표시값은 demo (실시간 외부 연동 미구성)
+# 수집 커넥터·연동 시스템 현황 — 상태·레코드 수 표시값은 demo (실시간 외부 연동 미구성).
+# collects/deployment/detail은 실제 커넥터 구현(secgrc.connectors)의 스펙을 반영.
 def get_collectors() -> List[Dict[str, Any]]:
     return [
         {"name": "HR Connector", "type": "READ-ONLY", "target": "HR-ERP (입퇴사·조직이동·겸직)",
-         "last_run": "10분 전", "records": 412, "status": "ACTIVE"},
+         "last_run": "10분 전", "records": 412, "status": "ACTIVE",
+         "deployment": "온프레미스 (사내 HR-ERP)",
+         "collects": "직원 마스터·입퇴사자 명단·조직이동·겸직/파견 현황",
+         "detail": "hr_connector.py — 직원 레코드를 읽어 퇴직자·겸직자 모집단을 생성"},
         {"name": "IAM Connector", "type": "READ-ONLY", "target": "AD/IAM (계정·권한·MFA·비밀번호정책)",
-         "last_run": "10분 전", "records": 2140, "status": "ACTIVE"},
+         "last_run": "10분 전", "records": 2140, "status": "ACTIVE",
+         "deployment": "온프레미스 (AD-PROD + IAM-GW)",
+         "collects": "계정 목록·권한 그룹·MFA 등록 여부·비밀번호 정책·마지막 로그인·비활성/휴면 계정",
+         "detail": "iam_connector.py — 온프레미스 AD와 IAM 게이트웨이에서 계정·인증 정보 수집 (클라우드 아님)"},
         {"name": "SIEM Connector", "type": "READ-ONLY", "target": "SIEM-01 (보안 로그·접속기록)",
-         "last_run": "10분 전", "records": 18327, "status": "ACTIVE"},
+         "last_run": "10분 전", "records": 18327, "status": "ACTIVE",
+         "deployment": "온프레미스 (SIEM-01)",
+         "collects": "인증 성공/실패 로그·원격접속 기록·특권 명령 실행 이력·보안 이벤트",
+         "detail": "로그 보관주기·접속기록 통제(2.9.x) 증적의 자동 수집 소스"},
         {"name": "CI/CD Connector", "type": "READ-ONLY", "target": "배포 이력·변경 승인",
-         "last_run": "—", "records": 0, "status": "PLANNED"},
+         "last_run": "—", "records": 0, "status": "PLANNED",
+         "deployment": "온프레미스 (CI/CD 파이프라인)",
+         "collects": "배포 이력·변경 승인 기록·빌드/릴리스 로그",
+         "detail": "연동 예정 — 변경관리 통제(2.10.x) 증적 자동화 목적"},
         {"name": "ITSM Connector", "type": "READ-ONLY", "target": "변경관리·사고 티켓",
-         "last_run": "—", "records": 0, "status": "PLANNED"},
+         "last_run": "—", "records": 0, "status": "PLANNED",
+         "deployment": "SaaS (외부 ITSM 서비스)",
+         "collects": "변경관리 티켓·사고/장애 기록·서비스 요청",
+         "detail": "연동 예정"},
         {"name": "CSPM Connector", "type": "READ-ONLY", "target": "클라우드 설정 스캔",
-         "last_run": "—", "records": 0, "status": "PLANNED"},
+         "last_run": "—", "records": 0, "status": "PLANNED",
+         "deployment": "클라우드 (GCP 프로젝트)",
+         "collects": "IAM 정책·스토리지 공개 설정·네트워크/방화벽 규칙·로깅·암호화 설정 등 GCP 구성 진단 결과",
+         "detail": "Prowler 오픈소스 기반 — connectors/prowler/에 실제 구현 존재 (prowler gcp 실행·결과 정규화·원장 기록). 콘솔 표시는 아직 연동 전(PLANNED)"},
         {"name": "Vulnerability Scanner", "type": "READ-ONLY", "target": "취약점 스캔 결과",
-         "last_run": "—", "records": 0, "status": "PLANNED"},
+         "last_run": "—", "records": 0, "status": "PLANNED",
+         "deployment": "온프레미스/SaaS (스캐너 연동 예정)",
+         "collects": "취약점 스캔 결과·CVE·조치 상태",
+         "detail": "연동 예정 — 취약점 관리 통제(2.10.x) 증적 자동화 목적"},
         {"name": "DLP/개인정보 Connector", "type": "READ-ONLY", "target": "개인정보처리시스템 현황",
-         "last_run": "—", "records": 0, "status": "PLANNED"},
+         "last_run": "—", "records": 0, "status": "PLANNED",
+         "deployment": "온프레미스 (개인정보처리시스템)",
+         "collects": "개인정보 저장 현황·처리시스템 목록·접근기록",
+         "detail": "연동 예정"},
     ]
 
 
@@ -818,6 +843,60 @@ def _llm_grounded(question: str, doc, text: str) -> Optional[str]:
     return None
 
 
+def _llm_general(message: str, page: Optional[str]) -> Optional[str]:
+    """일반 질의의 LLM 폴백 — 콘솔 런타임 상태를 컨텍스트로 실어 Gemini에 위임.
+    SDK/키/호출 실패 시 None → 도움말 텍스트로 폴백."""
+    try:
+        from secgrc.llm import get_gemini_api_key
+        api_key = get_gemini_api_key()
+        if not api_key:
+            return None
+        from google import genai
+    except Exception:
+        return None
+    try:
+        audit = get_audit_context()
+        land = get_landscape()
+        fs = audit_findings_manager.get_finding_summary()
+        collectors = get_collectors()
+        conn = get_connections()
+        docs = evidence_repo.list_documents()
+        kpis = get_kpis()
+        ctx = (
+            f"[심사] {audit['name']} ({audit['audit_type']}, 목표 {audit['target_date']}, D{audit['d_day']:+d})\n"
+            f"[준비도] {kpis['readiness']['pct']}% ({kpis['readiness']['ready']}/{kpis['readiness']['total']}) · "
+            f"증적커버 {kpis['evidence']['pct']}% · GAP {kpis['gaps']['count']}건 · 미해결 지적 {kpis['findings']['open']}건\n"
+            f"[커넥터] " + "; ".join(
+                f"{c['name']}({c['status']}, {c['deployment']}, 수집:{c['collects']})"
+                for c in collectors) + "\n"
+            f"[연결 시스템] " + "; ".join(
+                f"{s['system_id']}={s['name']}({s['status']})" for s in conn) + "\n"
+            f"[업로드 증적] {len(docs)}건 · [지적사항] 총 {fs['total_findings']}건\n"
+            f"[페이지] {page or 'unknown'}\n"
+            f"[주의] 커넥터 상태·레코드 수·준비도는 데모 표시값. 실제 데이터는 업로드 증적·"
+            f"원장·지적사항뿐이며 실시간 외부 연동은 미구성."
+        )
+        prompt = (
+            "당신은 ISMS-P 인증심사 지원 어시스턴트입니다. 아래 [콘솔 상태]를 근거로 한국어로 "
+            "간결하게 답하세요 (최대 8문장).\n"
+            "- [콘솔 상태]에 없는 사실은 추측하지 말고 '확인할 수 없습니다'라고 답하세요.\n"
+            "- 데모 표시값은 데모임을 명시하고, 실제 데이터와 구분하세요.\n"
+            "- 적합/부적합 판정·인증 결론은 하지 마세요. 이 응답은 참고용(advisory)입니다.\n\n"
+            f"{ctx}\n\n[질문]\n{message}"
+        )
+        client = genai.Client(api_key=api_key)
+        for model in _LLM_MODELS:
+            try:
+                r = client.models.generate_content(model=model, contents=prompt)
+                if r and r.text:
+                    return r.text.strip()
+            except Exception:
+                continue
+    except Exception:
+        return None
+    return None
+
+
 def _best_excerpts(question: str, text: str, limit: int = 6) -> List[str]:
     """질문 토큰과 겹치는 본문 라인을 원문 순서대로 발췌 (LLM 미사용 폴백)."""
     toks = [t for t in re.split(r"\s+", question)
@@ -971,26 +1050,59 @@ def post_assistant(message: str, page: Optional[str] = None) -> Dict[str, Any]:
                  {"label": "시스템 연동 상태", "href": "/connections"}]
         sugg = _SUGG_DEFAULT
     elif any(k in message for k in ["수집", "커넥터", "연동", "연결된 시스템", "어떤 시스템", "시스템에서 데이터", "데이터를 가져오는"]):
-        act = [c for c in get_collectors() if c["status"] == "ACTIVE"]
-        pln = [c for c in get_collectors() if c["status"] == "PLANNED"]
-        conn = [s for s in get_connections() if s["status"] == "CONNECTED"]
-        act_lines = "\n".join(
-            f"- **{c['name']}** → {c['target']} (마지막 수집 {c['last_run']}, {c['records']:,}건)"
-            for c in act)
-        pln_line = " · ".join(c["name"] for c in pln)
-        conn_line = " · ".join(s["system_id"] for s in conn)
-        reply = (
-            f"현재 수집 중인 커넥터는 **{len(act)}개**입니다 (표시 상태는 demo 값).\n\n"
-            f"**수집 중 (ACTIVE)**\n{act_lines}\n\n"
-            f"**연결된 시스템**: {conn_line}\n"
-            f"**연동 예정 (PLANNED)**: {pln_line}\n\n"
-            "주의 — 위 상태·레코드 수는 데모 표시값입니다. 이 인스턴스에서 실제로 수집된 "
-            "데이터는 `/intake` 수동 업로드 증적과 원장 레코드뿐이며, 실시간 외부 연동은 "
-            "아직 구성되지 않았습니다. Collection Status에서 커넥터별 상세를 확인할 수 있습니다."
-        )
-        links = [{"label": "Collection Status", "href": "/collection"},
-                 {"label": "System Connections", "href": "/connections"}]
-        sugg = ["실제 데이터와 합성 데이터는 뭐가 달라?", "증적 업로드 방법은?", "현재 준비도는?"]
+        # 특정 커넥터/시스템이 지목되면 그것만 상세 응답, 아니면 전체 개요
+        _ALIAS = {
+            "HR Connector": ["hr", "인사", "hr connector", "hr-erp"],
+            "IAM Connector": ["iam", "계정", "ad", "active directory", "iam-gw", "mfa"],
+            "SIEM Connector": ["siem", "로그", "siem-01"],
+            "CI/CD Connector": ["ci/cd", "cicd", "배포", "파이프라인"],
+            "ITSM Connector": ["itsm", "티켓", "변경관리", "사고"],
+            "CSPM Connector": ["cspm", "prowler", "클라우드", "cloud", "aws", "gcp"],
+            "Vulnerability Scanner": ["취약점", "vulnerability", "scanner", "cve"],
+            "DLP/개인정보 Connector": ["dlp", "개인정보"],
+        }
+        low = message.lower()
+        named = [c for c in get_collectors()
+                 if c["name"].lower() in low or any(a in low for a in _ALIAS.get(c["name"], []))]
+        if named:
+            lines = []
+            for c in named:
+                st = "수집 중" if c["status"] == "ACTIVE" else "아직 수집하지 않음 (연동 예정)"
+                lines.append(
+                    f"**{c['name']}** — {st}\n"
+                    f"- 대상: {c['target']}\n"
+                    f"- 위치: {c['deployment']}\n"
+                    f"- 수집 항목: {c['collects']}\n"
+                    f"- 상세: {c['detail']}"
+                    + (f"\n- 마지막 수집 {c['last_run']} · {c['records']:,}건 (표시값은 demo)"
+                       if c["status"] == "ACTIVE" else ""))
+            reply = "\n\n".join(lines) + (
+                "\n\n커넥터 상태·레코드 수는 데모 표시값입니다. 실제 수집 데이터는 수동 업로드 증적뿐이며, "
+                "실시간 연동은 Collection Status에서 설정합니다.")
+            links = [{"label": "Collection Status", "href": "/collection"},
+                     {"label": "System Connections", "href": "/connections"}]
+            sugg = ["수집 중인 커넥터 전체 보여줘", "실제 데이터와 합성 데이터는 뭐가 달라?"]
+        else:
+            act = [c for c in get_collectors() if c["status"] == "ACTIVE"]
+            pln = [c for c in get_collectors() if c["status"] == "PLANNED"]
+            conn = [s for s in get_connections() if s["status"] == "CONNECTED"]
+            act_lines = "\n".join(
+                f"- **{c['name']}** → {c['target']} (마지막 수집 {c['last_run']}, {c['records']:,}건)"
+                for c in act)
+            pln_line = " · ".join(c["name"] for c in pln)
+            conn_line = " · ".join(s["system_id"] for s in conn)
+            reply = (
+                f"현재 수집 중인 커넥터는 **{len(act)}개**입니다 (표시 상태는 demo 값).\n\n"
+                f"**수집 중 (ACTIVE)**\n{act_lines}\n\n"
+                f"**연결된 시스템**: {conn_line}\n"
+                f"**연동 예정 (PLANNED)**: {pln_line}\n\n"
+                "주의 — 위 상태·레코드 수는 데모 표시값입니다. 이 인스턴스에서 실제로 수집된 "
+                "데이터는 `/intake` 수동 업로드 증적과 원장 레코드뿐이며, 실시간 외부 연동은 "
+                "아직 구성되지 않았습니다. 특정 커넥터(예: CSPM, IAM)를 지목해 물으면 상세를 알려드립니다."
+            )
+            links = [{"label": "Collection Status", "href": "/collection"},
+                     {"label": "System Connections", "href": "/connections"}]
+            sugg = ["CSPM은 어떤 정보를 수집해?", "IAM connector는 어디서 수집해?", "실제 데이터와 합성 데이터는 뭐가 달라?"]
     elif any(k in message for k in ["확인", "퇴직", "계정", "먼저"]):
         reply = (
             f"가장 먼저 확인할 항목은 **{top['control_id']} {top['control_name']}**입니다.\n\n"
@@ -1022,18 +1134,27 @@ def post_assistant(message: str, page: Optional[str] = None) -> Dict[str, Any]:
         links = [{"label": "준비 현황", "href": "/audit"}, {"label": "GAP 분석", "href": "/gap"}]
         sugg = _SUGG_DEFAULT
     else:
-        page_hint = _PAGE_HINTS.get(page or "", "")
-        reply = (
-            "ISMS-P 인증심사와 관련해 다음을 도와드릴 수 있습니다.\n\n"
-            + (page_hint + "\n\n" if page_hint else "")
-            + "- 통제별 증적 현황 및 부족 항목 요약\n"
-            "- 업로드 증적 본문 질의 — 예: \"비밀번호 관리 정책.html의 최소 길이·변경 주기를 인용해 줘\"\n"
-            "- 심사원 예상 질의 시뮬레이션 (Audit Replay)\n"
-            "- 지적사항·보완조치 상태 설명\n- 정합성 불일치(정책↔설정) 위치 안내\n\n"
-            "예: \"퇴직자 계정 관리를 확인해 줘\", \"현재 준비도는?\", \"2.5.4 검토 요약\""
-        )
-        links = []
-        sugg = _SUGG_DEFAULT
+        # 의도 라우터에 매칭되지 않는 일반 질의 → 콘솔 상태를 컨텍스트로 Gemini에 위임.
+        # 실패 시 도움말로 폴백 (LLM 미연동 환경에서도 정직하게 rule 표기).
+        llm_reply = _llm_general(message, page)
+        if llm_reply:
+            reply = llm_reply + "\n\n— LLM 생성 응답 · 콘솔 상태 근거 (advisory)"
+            generated_by = "llm"
+            links = []
+            sugg = _SUGG_DEFAULT
+        else:
+            page_hint = _PAGE_HINTS.get(page or "", "")
+            reply = (
+                "ISMS-P 인증심사와 관련해 다음을 도와드릴 수 있습니다.\n\n"
+                + (page_hint + "\n\n" if page_hint else "")
+                + "- 통제별 증적 현황 및 부족 항목 요약\n"
+                "- 업로드 증적 본문 질의 — 예: \"비밀번호 관리 정책.html의 최소 길이·변경 주기를 인용해 줘\"\n"
+                "- 심사원 예상 질의 시뮬레이션 (Audit Replay)\n"
+                "- 지적사항·보완조치 상태 설명\n- 정합성 불일치(정책↔설정) 위치 안내\n\n"
+                "예: \"퇴직자 계정 관리를 확인해 줘\", \"현재 준비도는?\", \"2.5.4 검토 요약\""
+            )
+            links = []
+            sugg = _SUGG_DEFAULT
 
     return {
         "demo": True, "advisory": True, "generated_by": generated_by,
