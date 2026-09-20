@@ -19,7 +19,7 @@
       <div class="card-b">
         <div style="display:flex;align-items:center;gap:0;overflow-x:auto;padding:6px 0">
           {% for step in ['요구사항', '정책', '설정', '증적', '실제 운영'] %}
-          <div style="text-align:center;min-width:110px;padding:10px 14px;background:#f8fafc;border:1.5px solid var(--border);border-radius:10px">
+          <div style="text-align:center;min-width:92px;flex-shrink:0;padding:10px 12px;background:#f8fafc;border:1.5px solid var(--border);border-radius:10px">
             <div style="font-size:11px;font-weight:700;color:var(--muted)">STEP {{ loop.index }}</div>
             <div style="font-weight:700;font-size:13px;margin-top:2px">{{ step }}</div>
           </div>
@@ -62,8 +62,9 @@
       <div class="card-h"><div class="card-t">GAP 목록</div>
         <span style="font-size:11px;color:var(--muted)">행 클릭 → 통제 상세 컨텍스트</span></div>
       <div class="card-b" style="padding:0 0 6px">
+        <div style="overflow-x:auto">
         <table class="tbl" id="gapTable">
-          <thead><tr><th>GAP</th><th>통제</th><th>항목명</th><th>유형/상태</th><th>내용</th><th>시스템</th><th>담당자</th><th>기한</th><th>심각도</th></tr></thead>
+          <thead><tr><th>GAP</th><th>통제</th><th>항목명</th><th>유형/상태</th><th>내용</th><th>시스템</th><th>담당자</th><th>기한</th><th>심각도</th><th>지적사항</th></tr></thead>
           <tbody>
             {% for g in gaps %}
             <tr data-sev="{{ g.severity }}" data-label="{{ g.status_label }}"
@@ -77,10 +78,23 @@
               <td style="font-size:12px">{{ g.owner }}</td>
               <td class="mono" style="font-size:11px">{{ g.due_date }}</td>
               <td><span class="badge b-{{ g.severity }}">{{ g.severity }}</span></td>
+              <td>
+                {% if g.finding_id %}
+                <a class="badge b-IN_PROGRESS" href="/findings#{{ g.finding_id }}" data-gapreg-stop
+                   title="등록된 지적사항 보기" style="text-decoration:none">{{ g.finding_defect }}</a>
+                {% else %}
+                <button type="button" class="tb-btn" style="font-size:10.5px;padding:4px 9px;white-space:nowrap"
+                        data-gapreg='{{ {"gap_id": g.gap_id, "control_id": g.control_id, "control_name": g.control_name,
+                                        "description": g.description, "severity": g.severity, "system": g.system,
+                                        "owner": g.owner, "due_date": g.due_date} | tojson }}'
+                        aria-label="{{ g.gap_id }} 지적사항 등록">→ 등록</button>
+                {% endif %}
+              </td>
             </tr>
             {% endfor %}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   </div>
@@ -118,5 +132,63 @@ function filterGap(key) {
   document.querySelectorAll('.pill').forEach(p => p.classList.remove('on'));
   event.target.classList.add('on');
 }
+
+/* GAP → 지적사항 등록 — 확인 다이얼로그 후 서버에 생성 요청.
+ * 동일 GAP의 중복 등록은 서버가 멱등 반환. */
+function gapToast(msg, ok) {
+  let t = document.getElementById('gapToast');
+  if (!t) {
+    t = document.createElement('div');
+    t.id = 'gapToast';
+    t.style.cssText = 'position:fixed;left:50%;bottom:28px;transform:translateX(-50%);z-index:1100;' +
+      'padding:11px 18px;border-radius:10px;font-size:12.5px;font-weight:600;box-shadow:var(--shadow-lg);max-width:82vw';
+    document.body.appendChild(t);
+  }
+  t.style.background = ok ? 'var(--green-soft)' : 'var(--red-soft)';
+  t.style.color = ok ? 'var(--green)' : 'var(--red)';
+  t.style.border = `1px solid ${ok ? '#a7f3d0' : '#fecdd3'}`;
+  t.textContent = msg;
+  t.hidden = false;
+  clearTimeout(t._h);
+  t._h = setTimeout(() => { t.hidden = true; }, 5000);
+}
+
+document.addEventListener('click', async e => {
+  const b = e.target.closest('[data-gapreg]');
+  if (!b) return;
+  e.preventDefault();
+  const g = JSON.parse(b.dataset.gapreg);
+  const ok = window.confirm(
+    `이 GAP를 지적사항으로 등록하시겠습니까?\n\n` +
+    `[${g.gap_id}] ${g.control_id} ${g.control_name}\n` +
+    `${g.description}\n\n` +
+    `심각도 ${g.severity} → 지적사항으로 등록되면 Findings & Actions에서 생명주기가 시작됩니다.`);
+  if (!ok) return;
+  b.disabled = true;
+  b.textContent = '등록 중…';
+  try {
+    const d = await AS.api('/api/audit/findings', {
+      method: 'POST',
+      body: JSON.stringify({ ...g, audit_id: AS.get('audit') || '' }),
+    });
+    if (d.ok) {
+      const a = document.createElement('a');
+      a.className = 'badge b-IN_PROGRESS';
+      a.style.textDecoration = 'none';
+      a.href = `/findings#${d.finding_id}`;
+      a.textContent = d.defect_number;
+      b.replaceWith(a);
+      gapToast(d.already
+        ? `이미 등록된 지적사항입니다 — ${d.defect_number}`
+        : `지적사항 등록 완료 — ${d.defect_number} · Findings & Actions에서 확인하세요`, true);
+    } else {
+      throw new Error(d.error || 'failed');
+    }
+  } catch (_) {
+    b.disabled = false;
+    b.textContent = '→ 등록';
+    gapToast('지적사항 등록에 실패했습니다. 잠시 후 다시 시도해 주세요.', false);
+  }
+});
 </script>
 {% endblock %}

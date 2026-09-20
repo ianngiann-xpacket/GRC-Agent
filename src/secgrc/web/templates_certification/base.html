@@ -108,6 +108,19 @@
   <div class="sugg" id="assistantSugg"></div>
 </aside>
 
+<!-- ============ 증적 원문 인라인 미리보기 모달 ============ -->
+<div class="ev-modal" id="evPreviewModal" role="dialog" aria-modal="true"
+     aria-label="증적 원문 미리보기" hidden>
+  <div class="ev-modal-panel">
+    <div class="ev-modal-head">
+      <span id="evPreviewTitle">증적 미리보기</span>
+      <button type="button" class="assistant-close" id="evPreviewClose" aria-label="닫기">×</button>
+    </div>
+    <div class="ev-modal-meta" id="evPreviewMeta"></div>
+    <pre class="ev-modal-body" id="evPreviewBody"></pre>
+  </div>
+</div>
+
 <script src="/static/certification/app.js"></script>
 <script src="/static/certification/assistant.js?v=3"></script>
 {% block scripts %}{% endblock %}

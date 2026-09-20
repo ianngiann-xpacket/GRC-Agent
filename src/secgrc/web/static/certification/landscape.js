@@ -4,7 +4,8 @@
 class ControlLandscape {
   constructor(containerId, opts = {}) {
     this.el = document.getElementById(containerId);
-    this.zoomed = null; // 현재 확장된 도메인 id
+    this.zoomed = null; // 현재 확장된 도메인 id — ?domain= 에 동기화
+    this.query = '';    // 검색어 — ?q= 에 동기화
     this.opts = opts;
     this.data = null;
   }
@@ -12,6 +13,15 @@ class ControlLandscape {
   async load() {
     this.data = await AS.api('/api/audit/landscape');
     this.render();
+  }
+
+  // 확장 도메인·검색어를 URL에 반영 — 새로고침/뒤로가기 시 상태 유지
+  syncUrl() {
+    const p = new URLSearchParams(location.search);
+    if (this.zoomed) p.set('domain', this.zoomed); else p.delete('domain');
+    if (this.query) p.set('q', this.query); else p.delete('q');
+    const qs = p.toString();
+    history.replaceState(null, '', location.pathname + (qs ? `?${qs}` : ''));
   }
 
   render() {
@@ -48,6 +58,44 @@ class ControlLandscape {
     }
     html += '</div>';
 
+    // 검색 모드 — 전체 도메인에서 ID·명칭 매칭을 평면 목록으로 표시
+    const q = (this.query || '').trim().toLowerCase();
+    if (q) {
+      const matches = [];
+      for (const dom of d.domains) {
+        for (const sub of dom.sub) {
+          for (const c of sub.controls) {
+            if (c.control_id.toLowerCase().includes(q) || (c.name || '').toLowerCase().includes(q)) {
+              matches.push({ ...c, sub_label: `${sub.sub_id} ${sub.name}` });
+            }
+          }
+        }
+      }
+      html += `<div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px">
+        <div style="font-size:12.5px;font-weight:700">검색 결과 ${matches.length}건 — "${AS.esc(this.query)}"</div>
+        <button class="tb-btn" data-clearsearch style="font-size:11.5px;padding:5px 10px">✕ 검색 지우기</button>
+      </div>`;
+      if (matches.length) {
+        html += '<div class="subgrid">';
+        for (const c of matches) {
+          html += `
+            <button class="ctrl-node st-${AS.esc(c.state)}" data-control="${AS.esc(c.control_id)}"
+                    aria-label="${AS.esc(c.control_id)} ${AS.esc(c.name)}">
+              <div class="cid">${AS.esc(c.control_id)} · ${AS.esc(c.sub_label)}</div>
+              <div class="cname">${AS.esc(c.name)}</div>
+              <div class="cev">증적 ${c.evidence_pct}%</div>
+            </button>`;
+        }
+        html += '</div>';
+      } else {
+        html += `<div style="padding:24px;text-align:center;color:var(--muted);font-size:12.5px">
+          일치하는 통제가 없습니다 — ID(예: 2.5.4) 또는 명칭 일부로 검색해 보세요.</div>`;
+      }
+      this.el.innerHTML = html;
+      this.bind();
+      return;
+    }
+
     if (this.zoomed) {
       const dom = d.domains.find(x => x.id === this.zoomed);
       if (dom) {
@@ -80,12 +128,21 @@ class ControlLandscape {
       el.addEventListener('click', () => {
         this.zoomed = this.zoomed === el.dataset.domain ? null : el.dataset.domain;
         this.render();
+        this.syncUrl();
       }));
     this.el.querySelectorAll('.ctrl-node').forEach(el =>
       el.addEventListener('click', () =>
         AS.go(`/controls/${el.dataset.control}`)));
     const out = this.el.querySelector('[data-zoomout]');
-    if (out) out.addEventListener('click', () => { this.zoomed = null; this.render(); });
+    if (out) out.addEventListener('click', () => { this.zoomed = null; this.render(); this.syncUrl(); });
+    const clr = this.el.querySelector('[data-clearsearch]');
+    if (clr) clr.addEventListener('click', () => {
+      this.query = '';
+      const inp = document.getElementById('landSearch');
+      if (inp) inp.value = '';
+      this.render();
+      this.syncUrl();
+    });
   }
 }
 

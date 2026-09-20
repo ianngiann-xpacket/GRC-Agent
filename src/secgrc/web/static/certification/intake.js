@@ -1,4 +1,4 @@
-/* Evidence Intake — 실제 파일 업로드.
+/* Evidence Intake — 실제 파일 업로드 (다중 파일 큐 + 통제 일괄 매핑).
  * raw-body POST /api/audit/evidence/upload (multipart 불필요).
  * X-Evidence-Upload 커스텀 헤더 필수 — CSRF 방어의 일부.
  * 모든 동적 값은 AS.esc()로 이스케이프.
@@ -7,15 +7,18 @@
   const zone = document.getElementById('dropZone');
   const input = document.getElementById('fileInput');
   const btn = document.getElementById('uploadBtn');
+  const applyAllBtn = document.getElementById('applyAllBtn');
   const status = document.getElementById('uploadStatus');
   const controlSel = document.getElementById('intakeControl');
   const typeSel = document.getElementById('intakeType');
   const tbody = document.getElementById('intakeResults');
+  const queueBox = document.getElementById('uploadQueue');
+  const suggBox = document.getElementById('suggestBox');
   if (!zone || !input) return;
 
-  let pendingFile = null;
   const TEXT_EXT = /\.(txt|csv|html|htm|md|log|json)$/i;
-  const suggBox = document.getElementById('suggestBox');
+  let queue = [];        // {file, ctlSel, statusEl, userSet}
+  let uploading = false;
 
   function setStatus(msg, kind) {
     status.style.display = 'block';
@@ -25,67 +28,110 @@
     status.innerHTML = msg;
   }
 
-  function renderSuggestions(data) {
-    if (!suggBox) return;
-    const cands = data.candidates || [];
-    if (!cands.length) {
-      suggBox.innerHTML = `<div style="font-size:11.5px;color:var(--muted)">자동 매핑 후보가 없습니다 — 통제 항목을 직접 선택해 주세요.</div>`;
-      return;
-    }
-    const conf = { high: '높음', medium: '보통', low: '낮음' }[data.confidence] || data.confidence;
-    suggBox.innerHTML = `<div style="font-size:11.5px;font-weight:700;color:var(--purple);margin-bottom:6px">
-        ⓘ 자동 추천 (신뢰도 ${AS.esc(conf)}) — 최종 매핑은 확인 후 확정됩니다</div>` +
-      cands.map((c, i) => `<button type="button" class="sugg-btn sugg-ctl" data-cid="${AS.esc(c.control_id)}"
-          style="font-size:11.5px">${i === 0 ? '★ ' : ''}${AS.esc(c.control_id)} ${AS.esc(c.name)}
-          <span style="color:var(--muted)">(${c.matched.map(AS.esc).join('·')})</span></button>`).join('');
-    suggBox.querySelectorAll('.sugg-ctl').forEach(b =>
-      b.addEventListener('click', () => {
-        controlSel.value = b.dataset.cid;
-        suggBox.querySelectorAll('.sugg-ctl').forEach(x => x.style.borderColor = 'var(--border)');
-        b.style.borderColor = 'var(--blue)';
-      }));
+  function ctlSelect() {
+    const s = document.createElement('select');
+    s.className = 'tb-select';
+    s.style.cssText = 'width:100%;font-size:11.5px;padding:5px 8px';
+    s.innerHTML = controlSel.innerHTML;
+    return s;
   }
 
-  async function suggest(file) {
+  function renderQueue() {
+    if (!queue.length) { queueBox.innerHTML = ''; return; }
+    queueBox.innerHTML = `<div style="font-size:11.5px;font-weight:700;color:var(--text-2);margin-bottom:6px">
+      업로드 대기 ${queue.length}개 — 파일별 통제를 확인한 뒤 업로드하세요</div>`;
+    queue.forEach((it, i) => {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:grid;grid-template-columns:minmax(140px,1.2fr) 1.4fr auto;gap:8px;' +
+        'align-items:center;padding:7px 10px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;background:#fff';
+      const name = document.createElement('div');
+      name.style.cssText = 'min-width:0';
+      name.innerHTML = `<div style="font-weight:600;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+            title="${AS.esc(it.file.name)}">${AS.esc(it.file.name)}</div>
+        <div style="font-size:10.5px;color:var(--muted)">${(it.file.size / 1024).toFixed(1)} KB</div>`;
+      const right = document.createElement('div');
+      right.style.cssText = 'display:flex;align-items:center;gap:6px';
+      const st = document.createElement('span');
+      st.className = 'badge b-info';
+      st.style.fontSize = '10px';
+      st.textContent = '대기';
+      const rm = document.createElement('button');
+      rm.type = 'button';
+      rm.className = 'tb-btn';
+      rm.style.cssText = 'font-size:10.5px;padding:3px 8px';
+      rm.textContent = '✕';
+      rm.setAttribute('aria-label', `${it.file.name} 대기열에서 제거`);
+      rm.addEventListener('click', () => { queue.splice(i, 1); renderQueue(); refreshBtn(); });
+      right.appendChild(st);
+      right.appendChild(rm);
+      it.statusEl = st;
+      it.ctlSel.addEventListener('change', () => { it.userSet = true; });
+      row.appendChild(name);
+      row.appendChild(it.ctlSel);
+      row.appendChild(right);
+      queueBox.appendChild(row);
+    });
+  }
+
+  function refreshBtn() {
+    const n = queue.length;
+    btn.disabled = !n || uploading;
+    btn.textContent = n ? (n === 1 ? '업로드' : `${n}개 파일 업로드`) : '파일 선택 후 업로드 가능';
+  }
+
+  async function suggestFor(item) {
     let sample = '';
-    if (TEXT_EXT.test(file.name)) {
-      try { sample = await file.slice(0, 65536).text(); } catch (_) { /* 바이너리 판독 실패 시 파일명만 사용 */ }
+    if (TEXT_EXT.test(item.file.name)) {
+      try { sample = await item.file.slice(0, 65536).text(); } catch (_) { /* 바이너리 판독 실패 시 파일명만 */ }
     }
     try {
       const data = await AS.api('/api/audit/evidence/suggest', {
         method: 'POST',
-        body: JSON.stringify({ file_name: file.name, sample }),
+        body: JSON.stringify({ file_name: item.file.name, sample }),
       });
-      renderSuggestions(data);
       const top = (data.candidates || [])[0];
-      if (top && ['high', 'medium'].includes(data.confidence)) {
-        controlSel.value = top.control_id;
-        setStatus(`선택됨: <strong>${AS.esc(file.name)}</strong> — 추천 통제 <strong>${AS.esc(top.control_id)} ${AS.esc(top.name)}</strong> 자동 선택됨`, 'info');
+      if (top && ['high', 'medium'].includes(data.confidence) && !item.userSet) {
+        item.ctlSel.value = top.control_id;
+        item.statusEl.textContent = `추천 ${top.control_id}`;
+        item.statusEl.className = 'badge b-PARTIAL';
+        item.statusEl.style.fontSize = '10px';
       }
     } catch (_) { /* 추천 실패 시 수동 선택 유지 */ }
   }
 
-  function pick(file) {
-    pendingFile = file;
-    zone.querySelector('div:nth-child(2)').textContent = file.name;
-    zone.querySelector('div:nth-child(3)').textContent =
-      `${(file.size / 1024).toFixed(1)} KB — 통제 항목을 선택한 뒤 업로드`;
-    btn.disabled = false;
-    btn.textContent = '업로드';
-    setStatus(`선택됨: <strong>${AS.esc(file.name)}</strong> (${(file.size / 1024).toFixed(1)} KB)`, 'info');
-    suggest(file);
+  function pick(fileList) {
+    const files = [...fileList].slice(0, 30);
+    for (const file of files) {
+      const item = { file, ctlSel: ctlSelect(), statusEl: null, userSet: false };
+      queue.push(item);
+      suggestFor(item);
+    }
+    renderQueue();
+    refreshBtn();
+    if (files.length) {
+      setStatus(`<strong>${files.length}개 파일</strong> 대기 중 — 파일별 통제를 확인하거나, 아래 '전체 적용'으로 일괄 지정하세요.`, 'info');
+    }
+    if (suggBox) suggBox.innerHTML = '';
   }
 
   zone.addEventListener('click', () => input.click());
   zone.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); input.click(); } });
-  input.addEventListener('change', () => { if (input.files[0]) pick(input.files[0]); });
+  input.addEventListener('change', () => { if (input.files.length) pick(input.files); input.value = ''; });
 
   zone.addEventListener('dragover', e => { e.preventDefault(); zone.style.borderColor = 'var(--blue)'; });
   zone.addEventListener('dragleave', () => { zone.style.borderColor = 'var(--border-strong)'; });
   zone.addEventListener('drop', e => {
     e.preventDefault();
     zone.style.borderColor = 'var(--border-strong)';
-    if (e.dataTransfer.files[0]) pick(e.dataTransfer.files[0]);
+    if (e.dataTransfer.files.length) pick(e.dataTransfer.files);
+  });
+
+  // 일괄 매핑 — 상단 통제 선택을 대기 중인 전체 파일에 적용
+  if (applyAllBtn) applyAllBtn.addEventListener('click', () => {
+    if (!queue.length) { setStatus('먼저 파일을 선택해 주세요.', 'error'); return; }
+    if (!controlSel.value) { setStatus('일괄 적용할 통제 항목을 먼저 선택해 주세요.', 'error'); controlSel.focus(); return; }
+    queue.forEach(it => { it.ctlSel.value = controlSel.value; it.userSet = true; });
+    setStatus(`통제 <strong>${AS.esc(controlSel.value)}</strong>를 대기 중인 ${queue.length}개 파일에 일괄 적용했습니다.`, 'info');
   });
 
   function resultRow(name, control, sensitive, hash, ok, note) {
@@ -98,27 +144,17 @@
     </tr>`;
   }
 
-  function resetForm() {
-    pendingFile = null;
-    input.value = '';
-    zone.querySelector('div:nth-child(2)').textContent = '파일을 드래그하거나 클릭하여 업로드';
-    zone.querySelector('div:nth-child(3)').textContent =
-      'PDF · XLSX · DOCX · PNG · HWP · HTML · TXT · CSV — 최대 10MB, 업로드 즉시 민감정보 자동 검사';
-    if (suggBox) suggBox.innerHTML = '';
-    btn.disabled = true;
-    btn.textContent = '파일 선택 후 업로드 가능';
+  function rowStatus(item, text, cls) {
+    if (!item.statusEl) return;
+    item.statusEl.textContent = text;
+    item.statusEl.className = `badge b-${cls}`;
+    item.statusEl.style.fontSize = '10px';
   }
 
-  async function upload() {
-    if (!pendingFile) return;
-    const controlId = controlSel.value;
-    if (!controlId) {
-      setStatus('통제 항목을 먼저 선택해 주세요.', 'error');
-      controlSel.focus();
-      return;
-    }
-    btn.disabled = true;
-    btn.textContent = '업로드 중…';
+  async function uploadOne(item) {
+    const controlId = item.ctlSel.value;
+    if (!controlId) { rowStatus(item, '통제 미지정', 'FAIL'); return { ok: false, skip: true }; }
+    rowStatus(item, '업로드 중…', 'IN_PROGRESS');
     try {
       const res = await fetch(
         `/api/audit/evidence/upload?control_id=${encodeURIComponent(controlId)}&doc_type=${encodeURIComponent(typeSel.value)}`,
@@ -126,37 +162,58 @@
           method: 'POST',
           headers: {
             'Content-Type': 'application/octet-stream',
-            'X-File-Name': encodeURIComponent(pendingFile.name),
+            'X-File-Name': encodeURIComponent(item.file.name),
             'X-Evidence-Upload': '1',
           },
-          body: pendingFile,
+          body: item.file,
         });
       const data = await res.json();
       if (res.ok && data.ok) {
         tbody.insertAdjacentHTML('afterbegin',
           resultRow(data.file_name, data.control_id, false, data.sha256, true,
             `통과 · 원장 ${data.record_id.slice(0, 12)}`));
-        setStatus(
-          `✅ <strong>${AS.esc(data.file_name)}</strong> 등록 완료 — 증적 ID <code>${AS.esc(data.evidence_id)}</code>, ` +
-          `SHA-256 <code>${AS.esc(data.sha256.slice(0, 16))}…</code>, 해시체인 ${data.chain_valid ? '무결 ✓' : '손상 ✗'}`, 'ok');
-        resetForm();  // 같은 파일의 중복 업로드 방지
-      } else if (data.blocked) {
+        rowStatus(item, '완료 ✓', 'PASS');
+        return { ok: true, id: data.evidence_id };
+      }
+      if (data.blocked) {
         tbody.insertAdjacentHTML('afterbegin',
-          resultRow(data.file_name || pendingFile.name, controlId, true, data.sha256, false, '차단됨'));
-        setStatus(
-          `🚫 <strong>민감정보 검출로 차단</strong> — ${AS.esc((data.detected || []).join(', '))}. ` +
-          `파일은 저장되지 않았으며 차단 사실이 원장에 기록되었습니다.`, 'error');
-      } else {
-        setStatus(`업로드 실패: ${AS.esc(data.error || `HTTP ${res.status}`)}`, 'error');
+          resultRow(data.file_name || item.file.name, controlId, true, data.sha256, false, '차단됨'));
+        rowStatus(item, '민감정보 차단', 'FAIL');
+        return { ok: false, blocked: true, detected: data.detected || [] };
       }
-    } catch (e) {
-      setStatus('네트워크 오류로 업로드하지 못했습니다.', 'error');
-    } finally {
-      if (pendingFile) {  // 성공 시 resetForm이 버튼을 비활성화 — 실패 시에만 재시도 가능하게 복원
-        btn.disabled = false;
-        btn.textContent = '업로드';
-      }
+      rowStatus(item, '실패', 'FAIL');
+      return { ok: false, error: data.error || `HTTP ${res.status}` };
+    } catch (_) {
+      rowStatus(item, '네트워크 오류', 'FAIL');
+      return { ok: false, error: 'network' };
     }
+  }
+
+  async function upload() {
+    if (!queue.length || uploading) return;
+    const unmapped = queue.filter(it => !it.ctlSel.value);
+    if (unmapped.length) {
+      setStatus(`${unmapped.length}개 파일에 통제 항목이 지정되지 않았습니다 — 파일별로 선택하거나 '전체 적용'을 사용하세요.`, 'error');
+      return;
+    }
+    uploading = true;
+    refreshBtn();
+    let done = 0, blocked = 0, failed = 0;
+    for (const item of queue) {
+      const r = await uploadOne(item);
+      if (r.ok) done++;
+      else if (r.blocked) blocked++;
+      else failed++;
+    }
+    const parts = [];
+    if (done) parts.push(`<strong>${done}개 등록 완료</strong> — 증적 원장에 해시체인으로 기록됨`);
+    if (blocked) parts.push(`${blocked}개 민감정보 검출로 차단 (저장되지 않음, 차단 사실만 원장 기록)`);
+    if (failed) parts.push(`${failed}개 실패`);
+    setStatus(parts.join('<br>'), failed ? 'error' : 'ok');
+    queue = queue.filter(it => it.statusEl && !['완료 ✓'].includes(it.statusEl.textContent));
+    uploading = false;
+    renderQueue();
+    refreshBtn();
   }
 
   btn.addEventListener('click', upload);

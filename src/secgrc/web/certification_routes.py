@@ -11,6 +11,7 @@
 
 import hashlib
 import io
+import json
 import re
 import uuid
 from datetime import datetime
@@ -23,6 +24,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
+from secgrc.audit_findings.manager import FindingSeverity, audit_findings_manager
 from secgrc.control_engine.engine import control_engine
 from secgrc.evidence.document.repository import DocumentType
 from secgrc.evidence.ledger import EvidenceRecordType, evidence_ledger
@@ -38,7 +40,6 @@ router = APIRouter()
 def _ctx(request: Request, page: str, audit_id: Optional[str] = None, **extra) -> Dict[str, Any]:
     """공통 템플릿 컨텍스트 — 감사 컨텍스트 카드 + 내비 배지."""
     ad.ensure_demo_dataset()
-    from secgrc.audit_findings.manager import audit_findings_manager
     fs = audit_findings_manager.get_finding_summary()
     return {
         "request": request,
@@ -244,11 +245,11 @@ async def connections(request: Request, audit: Optional[str] = None) -> HTMLResp
 # ---------------------------------------------------------------------------
 
 _REPORTS = [
-    {"name": "인증 준비도 보고서", "desc": "통제별 준비도·증적 현황·미비 항목 종합", "source": "ControlEngine+GAP", "format": "PDF"},
-    {"name": "GAP 분석 리포트", "desc": "정책↔설정↔증적 불일치 목록 및 근거", "source": "Reconciliation", "format": "PDF/XLSX"},
-    {"name": "결함보고서", "desc": "지적사항 12개 분석 필드 + 보완조치 이력", "source": "FindingsManager", "format": "PDF"},
-    {"name": "증적 무결성 증명", "desc": "원장 해시체인 검증 결과 및 수집 출처", "source": "EvidenceLedger", "format": "PDF/JSON"},
-    {"name": "심사 제출 패키지", "desc": "증적+정합성+지적사항+조치 이력 묶음", "source": "전 계층", "format": "ZIP"},
+    {"key": "readiness", "name": "인증 준비도 보고서", "desc": "통제별 준비도·증적 현황·미비 항목 종합", "source": "ControlEngine+GAP", "format": "HTML (인쇄→PDF)"},
+    {"key": "gap", "name": "GAP 분석 리포트", "desc": "정책↔설정↔증적 불일치 목록 및 근거", "source": "Reconciliation", "format": "HTML (인쇄→PDF)"},
+    {"key": "findings", "name": "결함보고서", "desc": "지적사항 12개 분석 필드 + 보완조치 이력", "source": "FindingsManager", "format": "HTML (인쇄→PDF)"},
+    {"key": "integrity", "name": "증적 무결성 증명", "desc": "원장 해시체인 검증 결과 및 수집 출처", "source": "EvidenceLedger", "format": "HTML/JSON"},
+    {"key": "package", "name": "심사 제출 패키지", "desc": "증적+정합성+지적사항+조치 이력 묶음", "source": "전 계층", "format": "JSON 다운로드"},
 ]
 
 
@@ -256,6 +257,83 @@ _REPORTS = [
 async def reports(request: Request, audit: Optional[str] = None) -> HTMLResponse:
     return templates.TemplateResponse(request, "reports.html", _ctx(request, "reports", audit, reports=_REPORTS)
     )
+
+
+@router.get("/reports/{report_key}")
+async def report_render(request: Request, report_key: str,
+                        audit: Optional[str] = None) -> Any:
+    """리포트 생성 — 서버가 현재 데이터로 렌더링 (데모 섹션은 demo 표기).
+
+    package는 전 계층 JSON 묶음을 파일로 다운로드하고, 나머지는
+    인쇄 가능한 HTML 보고서를 새 탭에 표시한다.
+    """
+    if report_key == "package":
+        data = ad.build_package(audit)
+        ts = datetime.now().strftime("%Y%m%d-%H%M")
+        return JSONResponse(
+            data,
+            headers={"Content-Disposition":
+                     f'attachment; filename="ismsp-audit-package-{ts}.json"'},
+        )
+    data = ad.build_report(report_key, audit)
+    if data is None:
+        return RedirectResponse(url="/reports")
+    return templates.TemplateResponse(request, "report_render.html", {"request": request, "r": data})
+
+
+class FindingCreateRequest(BaseModel):
+    gap_id: str = ""
+    control_id: str
+    control_name: str = ""
+    title: str = ""
+    description: str = ""
+    severity: str = "MEDIUM"
+    system: str = ""
+    owner: str = ""
+    due_date: str = ""
+    audit_id: str = ""
+
+
+@router.post("/api/audit/findings")
+async def api_create_finding(body: FindingCreateRequest) -> Dict[str, Any]:
+    """GAP 항목을 지적사항으로 등록 — 같은 GAP의 중복 등록은 멱등하게 반환."""
+    ad.ensure_demo_dataset()
+    if body.gap_id:
+        for f in audit_findings_manager._findings.values():
+            if body.gap_id in (f.tags or []):
+                return {"ok": True, "already": True, "finding_id": f.finding_id,
+                        "defect_number": f.defect_number}
+    sev_map = {"CRITICAL": "CRITICAL", "HIGH": "MAJOR",
+               "MEDIUM": "MINOR", "LOW": "OBSERVATION"}
+    sev = FindingSeverity[sev_map.get(body.severity.upper(), "MINOR")]
+    year = datetime.now().year
+    existing = {f.defect_number for f in audit_findings_manager._findings.values()}
+    n = 1
+    while f"DEF-{year}-{n:03d}" in existing:
+        n += 1
+    try:
+        due = datetime.strptime(body.due_date, "%Y-%m-%d") if body.due_date else None
+    except ValueError:
+        due = None
+    f = audit_findings_manager.create_finding(
+        audit_id=body.audit_id or "AUDIT-DEMO-001",
+        control_id=body.control_id,
+        control_name=body.control_name or body.control_id,
+        severity=sev,
+        title=body.title or f"{body.control_id} GAP 지적사항",
+        description=body.description or "GAP 분석에서 확인된 불일치",
+        auditor="심사대응 담당자",
+        defect_number=f"DEF-{year}-{n:03d}",
+        confirmed_facts=body.description or "",
+        target=body.system or "관련 시스템",
+        judgment_basis="GAP 분석 결과 (요구↔정책↔설정↔증적↔운영 대사)",
+        additional_checks="전체 모집단 수준 점검 필요",
+        submission_deadline=due,
+        assignee=body.owner or None,
+    )
+    if body.gap_id:
+        f.tags.append(body.gap_id)
+    return {"ok": True, "finding_id": f.finding_id, "defect_number": f.defect_number}
 
 
 @router.get("/history", response_class=HTMLResponse)
@@ -398,6 +476,62 @@ class SuggestRequest(BaseModel):
 async def api_evidence_suggest(body: SuggestRequest) -> Dict[str, Any]:
     """파일명+본문 샘플로 통제항목을 추천한다 (advisory — 상태 변경 없음)."""
     return ad.suggest_control(body.file_name, body.sample)
+
+
+_PREVIEW_MAX_BYTES = 256 * 1024
+_PREVIEW_TEXT_EXT = {".txt", ".md", ".csv", ".log", ".json", ".html", ".htm"}
+
+
+def _preview_of_record(rec) -> Dict[str, Any]:
+    """원장 레코드를 미리보기 페이로드로 변환."""
+    return {
+        "kind": "record",
+        "title": f"{rec.record_id} — 원장 레코드",
+        "evidence_id": rec.evidence_id,
+        "control_id": rec.control_id.replace("ISMS-P-", ""),
+        "doc_type": rec.record_type.value,
+        "uploaded_at": rec.created_at.strftime("%Y-%m-%d %H:%M"),
+        "sha256": rec.hash,
+        "content": json.dumps(rec.content, ensure_ascii=False, indent=2),
+    }
+
+
+@router.get("/api/audit/evidence/{evidence_id}/preview")
+async def api_evidence_preview(evidence_id: str) -> Any:
+    """증적 원문 인라인 미리보기 — 텍스트류는 본문, 그 외는 원장 레코드/메타데이터."""
+    eid = evidence_id.strip().upper()
+
+    if eid.startswith("REC-"):
+        rec = evidence_ledger.get_record(eid)
+        if rec is None:
+            return _reject("not_found", 404)
+        return _preview_of_record(rec)
+
+    doc = ad.evidence_repo.get_document(eid)
+    if doc is not None:
+        meta = {
+            "evidence_id": doc.evidence_id,
+            "control_id": doc.control_id,
+            "doc_type": doc.document_type.value,
+            "file_name": doc.file_name,
+            "title": doc.title or doc.file_name,
+            "size": doc.file_size,
+            "sha256": doc.file_hash,
+            "uploaded_at": doc.uploaded_at.strftime("%Y-%m-%d %H:%M"),
+        }
+        ext = Path(doc.file_name).suffix.lower()
+        path = Path(doc.file_path) if doc.file_path else None
+        if ext not in _PREVIEW_TEXT_EXT or path is None or not path.exists():
+            if ext in _PREVIEW_TEXT_EXT:
+                return _reject("file_unavailable", 404)
+            return {**meta, "kind": "binary", "content": ""}
+        content = path.read_bytes()[:_PREVIEW_MAX_BYTES].decode("utf-8", "replace")
+        return {**meta, "kind": "text", "content": content}
+
+    rec = next((r for r in evidence_ledger._records if r.evidence_id.upper() == eid), None)
+    if rec is not None:
+        return _preview_of_record(rec)
+    return _reject("not_found", 404)
 
 
 # ---------------------------------------------------------------------------

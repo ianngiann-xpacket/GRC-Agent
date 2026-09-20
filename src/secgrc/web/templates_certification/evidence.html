@@ -40,8 +40,9 @@
       <div class="card-h"><div class="card-t">증적 원장 (Append-Only)</div>
         <span style="font-size:11px;color:var(--muted)">수정 불가 — 정정은 별도 레코드 추가로만</span></div>
       <div class="card-b" style="padding:0 0 6px">
+        <div style="overflow-x:auto">
         <table class="tbl">
-          <thead><tr><th>레코드 ID</th><th>증적 ID</th><th>통제</th><th>유형</th><th>수집</th><th>생성자</th><th>생성 시각</th><th>해시</th></tr></thead>
+          <thead><tr><th>레코드 ID</th><th>증적 ID</th><th>통제</th><th>유형</th><th>수집</th><th>생성자</th><th>생성 시각</th><th>해시</th><th></th></tr></thead>
           <tbody>
             {% for r in records %}
             <tr data-go="/controls/{{ r.control_id }}" tabindex="0" role="button">
@@ -53,12 +54,28 @@
               <td style="font-size:12px">{{ r.created_by }}</td>
               <td class="mono" style="font-size:11px">{{ r.created_at }}</td>
               <td class="mono" style="font-size:10px;color:var(--muted)">{{ r.hash[:24] }}…</td>
+              <td><button type="button" class="tb-btn" data-preview="{{ r.evidence_id }}"
+                      style="font-size:10.5px;padding:4px 9px" aria-label="{{ r.evidence_id }} 원문 미리보기">보기</button></td>
             </tr>
             {% else %}
-            <tr><td colspan="8" style="text-align:center;color:var(--muted);padding:24px">원장에 기록된 레코드가 없습니다</td></tr>
+            <tr><td colspan="9" style="padding:0;border-bottom:none">
+              <div style="text-align:center;padding:36px 20px">
+                <div style="font-size:30px;margin-bottom:10px">▤</div>
+                <div style="font-weight:700;font-size:14px;margin-bottom:6px">아직 등록된 증적이 없습니다</div>
+                <div style="font-size:12.5px;color:var(--muted);line-height:1.7;max-width:460px;margin:0 auto 16px">
+                  증적을 업로드하면 SHA-256 해시가 불변 원장에 기록되고 통제 항목과 자동으로 연결됩니다.
+                  시스템 커넥터를 연동하면 수동 업로드 없이 자동 수집도 가능합니다.
+                </div>
+                <div style="display:flex;gap:8px;justify-content:center">
+                  <a href="/intake" class="rbtn primary" style="font-size:12.5px;text-decoration:none">⇪ 증적 업로드</a>
+                  <a href="/collection" class="rbtn" style="font-size:12.5px;text-decoration:none">↻ 수집 커넥터 확인</a>
+                </div>
+              </div>
+            </td></tr>
             {% endfor %}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
 

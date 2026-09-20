@@ -472,6 +472,10 @@ def get_gaps(status: Optional[str] = None, audit_id: Optional[str] = None) -> Di
         catalog = [g for g in _GAP_CATALOG if g[1] in keep]
     else:
         catalog = _GAP_CATALOG
+    # GAP → 지적사항 등록 연계 (등록 시 gap_id를 태그로 보존)
+    gap_findings = {
+        tag: f for f in audit_findings_manager._findings.values() for tag in (f.tags or [])
+    }
     gaps = []
     for i, (cid, gtype, status_kr, desc, system, sev) in enumerate(catalog, start=1):
         name = None
@@ -481,6 +485,7 @@ def get_gaps(status: Optional[str] = None, audit_id: Optional[str] = None) -> Di
                     name = items[int(cid.split(".")[-1]) - 1]
         real = control_engine.get_control(cid)
         owner = _OWNERS[_stable_bucket(cid) % len(_OWNERS)]
+        linked = gap_findings.get(f"GAP-{i:03d}")
         gaps.append({
             "gap_id": f"GAP-{i:03d}", "control_id": cid,
             "control_name": (real.title if real else name) or cid,
@@ -489,7 +494,8 @@ def get_gaps(status: Optional[str] = None, audit_id: Optional[str] = None) -> Di
             "owner": owner[0],
             "found_date": (datetime.now() - timedelta(days=i % 14)).strftime("%Y-%m-%d"),
             "due_date": (datetime.now() + timedelta(days=30 - i)).strftime("%Y-%m-%d"),
-            "finding_id": None,
+            "finding_id": linked.finding_id if linked else None,
+            "finding_defect": linked.defect_number if linked else None,
         })
     return {"gaps": gaps, "total": len(gaps), "demo": True}
 
@@ -873,8 +879,8 @@ def post_assistant(message: str, page: Optional[str] = None) -> Dict[str, Any]:
         reply = (
             "메시지에 증적 참조(REC-/DOC- ID 또는 파일명)가 포함되어 있지만 해당 증적을 찾지 못했습니다.\n\n"
             "- 증적 ID·파일명이 정확한지 확인해 주세요 (증적 관리 화면에서 확인 가능)\n"
-            "- 서버 재시작 시 업로드 증적의 인메모리 인덱스가 소실됩니다 — 파일은 보존되지만 "
-            "ID 매핑이 끊어지므로 다시 업로드하거나 파일명으로 질의해 주세요"
+            "- 서버가 재시작된 경우 업로드 이력과 파일의 연결이 끊어질 수 있습니다. "
+            "파일 자체는 보존되어 있으니, 같은 파일을 다시 업로드하거나 파일명으로 질의해 주세요"
         )
         links = [{"label": "증적 관리", "href": "/evidence"},
                  {"label": "증적 업로드", "href": "/intake"}]
@@ -1161,4 +1167,215 @@ def suggest_control(file_name: str, sample: str = "") -> Dict[str, Any]:
         "confidence": confidence,
         "advisory": True,
         "note": "자동 추천이며 최종 통제 매핑은 사용자가 확인합니다.",
+    }
+
+
+# ---------------------------------------------------------------------------
+# 리포트 생성 — 현재 런타임/데모 데이터를 표준 구조로 집계
+# (summary_rows: KPI 격자 / tables: 공통 테이블 / notes: 출처·한계 명시)
+# ---------------------------------------------------------------------------
+
+def _report_base(report_key: str, title: str, audit_id: Optional[str]) -> Dict[str, Any]:
+    return {
+        "key": report_key,
+        "title": title,
+        "audit": get_audit_context(audit_id),
+        "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "demo": True,
+        "summary_rows": [],
+        "tables": [],
+        "notes": [],
+    }
+
+
+def build_report(report_key: str, audit_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """리포트 표준 구조 생성 — report_render.html이 렌더링하는 계약."""
+    ensure_demo_dataset()
+    if report_key == "readiness":
+        kpis = get_kpis(audit_id)
+        land = get_landscape()
+        issues = get_top_issues(10, audit_id=audit_id)
+        pop = get_population(audit_id)
+        r = _report_base(report_key, "인증 준비도 보고서", audit_id)
+        r["summary_rows"] = [
+            {"label": "준비도", "value": f"{kpis['readiness']['pct']}% ({kpis['readiness']['ready']}/{kpis['readiness']['total']})"},
+            {"label": "증적 확보율", "value": f"{kpis['evidence']['pct']}% ({kpis['evidence']['covered']}/{kpis['evidence']['total']})"},
+            {"label": "GAP 발견", "value": f"{kpis['gaps']['count']}건"},
+            {"label": "미해결 지적사항", "value": f"{kpis['findings']['open']}건"},
+            {"label": "보완조치 진행 중", "value": f"{kpis['actions']['count']}건 (기한초과 {kpis['actions']['overdue']})"},
+        ]
+        r["tables"] = [
+            {
+                "title": "도메인별 준비 현황",
+                "columns": ["도메인", "통제 수", "READY", "PARTIAL", "MISSING", "CONFLICT", "준비율"],
+                "rows": [[
+                    f"{d['id']}. {d['name']}", d["count"],
+                    d["counts"]["READY"], d["counts"]["PARTIAL"],
+                    d["counts"]["MISSING"], d["counts"]["CONFLICT"],
+                    f"{d['ready_pct']}%",
+                ] for d in land["domains"]],
+            },
+            {
+                "title": "주요 미해결 이슈 TOP 10",
+                "columns": ["통제", "항목명", "유형", "심각도", "내용", "담당자", "기한"],
+                "rows": [[
+                    g["control_id"], g["control_name"], g["status_label"],
+                    g["severity"], g["description"], g["owner"], g["due_date"],
+                ] for g in issues],
+            },
+            {
+                "title": "범위·모집단 검증 현황",
+                "columns": ["항목", "수치"],
+                "rows": [
+                    ["인증범위 자산", f"{pop['total_assets']:,}건"],
+                    ["검증 완료", f"{pop['verified']:,}건"],
+                    ["검증 필요(예외)", f"{pop['exceptions']}건"],
+                    ["연결 시스템", f"{pop['systems']}개"],
+                    ["IAM 계정", f"{pop['iam_accounts']:,}개"],
+                    ["특권 계정", f"{pop['privileged_accounts']}개"],
+                ],
+            },
+        ]
+        r["notes"] = [
+            "준비도·증적율·GAP 수치는 데모 데이터(demo)입니다 — 실제 커넥터 연동 시 실측값으로 대체됩니다.",
+            "지적사항·증적 원장 수치는 현재 런타임의 실제 상태입니다.",
+        ]
+        return r
+
+    if report_key == "gap":
+        gaps = get_gaps(audit_id=audit_id)["gaps"]
+        recon = reconciliation_engine.get_reconciliation_summary()
+        recon_rows = [
+            [r.control_id.replace("ISMS-P-", ""), r.reconciliation_type.value,
+             r.status.value, r.severity, r.description]
+            for r in reconciliation_engine.results
+        ]
+        r = _report_base(report_key, "GAP 분석 리포트", audit_id)
+        r["summary_rows"] = [
+            {"label": "GAP 총계", "value": f"{len(gaps)}건"},
+            {"label": "CRITICAL", "value": f"{sum(1 for g in gaps if g['severity'] == 'CRITICAL')}건"},
+            {"label": "HIGH", "value": f"{sum(1 for g in gaps if g['severity'] == 'HIGH')}건"},
+            {"label": "정합성 일치율", "value": f"{recon['match_rate']:.1f}% ({recon['total_checks']}건 검사)"},
+        ]
+        r["tables"] = [
+            {
+                "title": "GAP 목록 (요구↔정책↔설정↔증적↔운영 대사)",
+                "columns": ["GAP", "통제", "항목명", "유형/상태", "심각도", "내용", "시스템", "담당자", "기한"],
+                "rows": [[
+                    g["gap_id"], g["control_id"], g["control_name"], g["status_label"],
+                    g["severity"], g["description"], g["system"], g["owner"], g["due_date"],
+                ] for g in gaps],
+            },
+            {
+                "title": "정합성 엔진 검사 결과 (실측)",
+                "columns": ["통제", "유형", "상태", "심각도", "내용"],
+                "rows": recon_rows or [["—", "—", "—", "—", "관측된 불일치 없음"]],
+            },
+        ]
+        r["notes"] = [
+            "GAP 목록은 데모 카탈로그 기반이며, 정합성 엔진 결과는 실제 런타임 관측값입니다.",
+            "각 GAP는 '지적사항 등록'으로 FindingsManager의 실제 생명주기에 연결할 수 있습니다.",
+        ]
+        return r
+
+    if report_key == "findings":
+        fv = get_findings_view()
+        s = fv["summary"]
+        r = _report_base(report_key, "결함보고서", audit_id)
+        r["summary_rows"] = [
+            {"label": "전체 지적사항", "value": f"{s['total_findings']}건"},
+            {"label": "치명적/주요", "value": f"{s['critical_findings']}/{s['major_findings']}건"},
+            {"label": "미해결", "value": f"{s['open_findings'] + s['in_progress_findings']}건"},
+            {"label": "기한초과 조치", "value": f"{s['corrective_actions']['overdue']}건"},
+        ]
+        rows = []
+        for f in fv["findings"]:
+            actions = "; ".join(
+                f"[{a['status']}] {a['description']} (담당 {a['assignee']}, 기한 {a['due_date']})"
+                for a in f["corrective_actions"]) or "—"
+            rows.append([
+                f["defect_number"], f["control_id"], f["title"], f["severity"], f["status"],
+                f["confirmed_facts"] or "—", f["assignee"] or "미지정",
+                f["independent_reviewer"] or "미실시", actions,
+            ])
+        r["tables"] = [{
+            "title": "지적사항 상세 (12개 분석 필드 요약 + 보완조치)",
+            "columns": ["결함번호", "통제", "제목", "심각도", "상태", "확인된 사실", "담당자", "독립재검증", "보완조치"],
+            "rows": rows or [["—"] * 9],
+        }]
+        r["notes"] = [
+            "지적사항·보완조치는 FindingsManager의 실제 생명주기 데이터입니다.",
+            "종결은 독립 재검증(조치자≠검증자) 완료 후에만 가능합니다.",
+        ]
+        return r
+
+    if report_key == "integrity":
+        ret = evidence_ledger.get_retention_report()
+        valid = evidence_ledger.verify_chain_integrity()
+        r = _report_base(report_key, "증적 무결성 증명", audit_id)
+        r["summary_rows"] = [
+            {"label": "해시체인 검증", "value": "무결 ✓ — 변조 없음" if valid else "손상 감지 — 조사 필요"},
+            {"label": "총 레코드", "value": f"{ret['total_records']}건"},
+            {"label": "만료 임박/만료", "value": f"{ret['expiring_soon']} / {ret['expired_records']}건"},
+            {"label": "검증 시각", "value": datetime.now().strftime("%Y-%m-%d %H:%M:%S")},
+        ]
+        r["tables"] = [{
+            "title": "원장 레코드 (Append-Only · SHA-256 해시체인)",
+            "columns": ["레코드 ID", "증적 ID", "통제", "유형", "수집", "생성자", "생성 시각", "해시"],
+            "rows": [[
+                rec.record_id, rec.evidence_id, rec.control_id.replace("ISMS-P-", ""),
+                rec.record_type.value, rec.collection_method, rec.created_by,
+                rec.created_at.strftime("%Y-%m-%d %H:%M:%S"), rec.hash,
+            ] for rec in reversed(evidence_ledger._records)] or [["—"] * 8],
+        }]
+        r["notes"] = [
+            "모든 레코드는 이전 레코드 해시를 포함한 체인으로 연결되어 소급 생성·변조가 탐지됩니다.",
+            "민감정보 검출로 차단된 제출 시도도 BLOCKED 레코드로 보존됩니다.",
+        ]
+        return r
+    return None
+
+
+def build_package(audit_id: Optional[str] = None) -> Dict[str, Any]:
+    """심사 제출 패키지 — 전 계층 데이터를 하나의 JSON 묶음으로."""
+    ensure_demo_dataset()
+    return {
+        "manifest": {
+            "package_type": "ISMS-P audit submission package",
+            "generated_at": datetime.now().isoformat(timespec="seconds"),
+            "contents": ["audit", "kpis", "landscape", "gaps", "findings",
+                         "reconciliation", "ledger", "integrity"],
+        },
+        "audit": get_audit_context(audit_id),
+        "kpis": get_kpis(audit_id),
+        "landscape": get_landscape(),
+        "gaps": get_gaps(audit_id=audit_id),
+        "findings": get_findings_view(),
+        "reconciliation": {
+            "summary": reconciliation_engine.get_reconciliation_summary(),
+            "results": [
+                {"control_id": r.control_id, "type": r.reconciliation_type.value,
+                 "status": r.status.value, "severity": r.severity,
+                 "description": r.description}
+                for r in reconciliation_engine.results
+            ],
+        },
+        "ledger": {
+            "retention": evidence_ledger.get_retention_report(),
+            "chain_valid": evidence_ledger.verify_chain_integrity(),
+            "records": [
+                {"record_id": r.record_id, "evidence_id": r.evidence_id,
+                 "control_id": r.control_id, "type": r.record_type.value,
+                 "collection_method": r.collection_method, "created_by": r.created_by,
+                 "created_at": r.created_at.isoformat(), "hash": r.hash,
+                 "content": r.content}
+                for r in evidence_ledger._records
+            ],
+        },
+        "integrity": {
+            "algorithm": "SHA-256 hash chain (append-only)",
+            "verified_at": datetime.now().isoformat(timespec="seconds"),
+            "valid": evidence_ledger.verify_chain_integrity(),
+        },
+        "demo": True,
     }
