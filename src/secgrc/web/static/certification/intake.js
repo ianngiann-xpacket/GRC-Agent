@@ -130,8 +130,23 @@
     const box = it.chipsEl;
     if (!box) return;
     box.innerHTML = '';
-    const cands = (it.cands || []).slice(0, 3);
-    if (!cands.length) return;
+    if (!it.cands) {
+      const ld = document.createElement('span');
+      ld.style.cssText = 'font-size:10px;color:var(--faint)';
+      ld.textContent = '추천 분석 중…';
+      box.appendChild(ld);
+      return;
+    }
+    const cands = it.cands.slice(0, 3);
+    if (!cands.length) {
+      const none = document.createElement('span');
+      none.style.cssText = 'font-size:10.5px;color:var(--muted)';
+      none.textContent = it.suggErr
+        ? '추천 분석 실패 — 위 목록에서 통제를 직접 선택하세요.'
+        : '자동 추천 없음 — 파일명·본문에서 통제 키워드를 찾지 못했습니다. 위 목록에서 직접 선택하세요.';
+      box.appendChild(none);
+      return;
+    }
     const lb = document.createElement('span');
     lb.style.cssText = 'font-size:10px;color:var(--purple);font-weight:700;align-self:center';
     lb.textContent = '추천:';
@@ -183,7 +198,11 @@
         syncChips(item);
         renderChips(item);
       }
-    } catch (_) { /* 추천 실패 시 수동 선택 유지 */ }
+    } catch (_) {
+      item.cands = [];
+      item.suggErr = true;
+      renderChips(item);
+    }
   }
 
   function pick(fileList) {
