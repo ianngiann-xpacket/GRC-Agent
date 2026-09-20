@@ -1764,28 +1764,37 @@ def build_scan_report(run_id: str, audit_id: Optional[str] = None) -> Optional[D
     if records:
         tables.append({
             "title": f"전체 진단 결과 ({len(records)}건)",
-            "columns": ["체크", "심각도", "상태", "서비스", "리전", "리소스", "설명"],
+            "columns": ["체크", "심각도", "상태", "서비스", "리전", "리소스", "내용"],
             "rows": [[
                 rec.payload.get("check_id", ""), _sev(rec.payload.get("source_severity")),
                 rec.payload.get("source_status", ""), rec.payload.get("service", ""),
                 rec.payload.get("region", ""), rec.payload.get("resource_id", ""),
-                (rec.payload.get("description", "") or "")[:140],
+                (rec.payload.get("description", "") or "")[:400],
             ] for rec in records],
         })
         action = [rec for rec in records if rec.payload.get("source_status") in ("FAIL", "MANUAL")]
         if action:
             tables.append({
                 "title": f"조치 검토 대상 ({len(action)}건 — FAIL·MANUAL)",
-                "columns": ["체크", "심각도", "상태", "권고 조치"],
+                "columns": ["체크", "심각도", "상태", "발견 내용", "권고 조치"],
                 "rows": [[
                     rec.payload.get("check_id", ""), _sev(rec.payload.get("source_severity")),
                     rec.payload.get("source_status", ""),
-                    (rec.payload.get("remediation_guidance", "") or "-")[:180],
+                    (rec.payload.get("description", "") or "-")[:300],
+                    (rec.payload.get("remediation_guidance", "") or "-")[:300],
                 ] for rec in action],
             })
     r["tables"] = tables
     r["notes"] = [
         "본 보고서는 Prowler 읽기전용 스캔의 실제 수집 결과입니다. 데모 데이터가 아닙니다.",
+        "상태 의미 — FAIL: 부적합 확인됨 · PASS: 적합 확인됨 · MANUAL: 자동 판정 불가(관련 API 미활성·권한 부족 등)로 사람 검토 필요. MANUAL은 취약점이 확정된 것이 아니라 '평가가 안 된 항목'입니다.",
+    ]
+    if report.get("rejected_count"):
+        r["notes"].append(
+            f"⚠ 수집 {report['record_count']}건 중 {report['rejected_count']}건이 정규화에서 제외됐습니다 — "
+            "입력 파일이 파인딩이 아닌 프레임워크 매핑 데이터이거나 필드가 누락된 경우입니다. "
+            "원본 raw 파일과 매니페스트 해시로 원인을 대조하세요.")
+    r["notes"] += [
         f"원시 출력 해시(SHA-256): {m.get('raw_output_hash', '-')}",
         f"정규화 출력 해시: {m.get('normalized_output_hash', '-')} · 매니페스트 해시: {m.get('manifest_hash', '-')}",
         f"실행 이미지: {m.get('runtime_image', '-')} · 매핑 버전: {m.get('mapping_version', '-')}",

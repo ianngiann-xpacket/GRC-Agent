@@ -193,16 +193,21 @@ class ProwlerGcpService:
         raw_output_hash = ""
         actual_results_file = results_file
         if not actual_results_file.exists():
-            # v5는 results.ocsf.json 형태로 생성 — 출력 파일명 접두사를 우선 매칭
-            candidates = sorted(
-                p for p in run_raw_dir.rglob("results*.json") if p.name != "manifest.json"
-            )
-            if not candidates:
+            # v5는 results.ocsf.json 형태로 생성 — 최상위 출력만 선택.
+            # rglob으로 하위까지 검색하면 compliance/results_*.json(프레임워크
+            # 매핑 데이터)이 사전순으로 먼저 잡혀 파인딩 대신 ingest되는 버그가 있었다.
+            for name in ("results.ocsf.json", "results.json"):
+                cand = run_raw_dir / name
+                if cand.exists():
+                    actual_results_file = cand
+                    break
+            else:
                 candidates = sorted(
-                    p for p in run_raw_dir.rglob("*.json") if p.name != "manifest.json"
+                    p for p in run_raw_dir.glob("results*.json")
+                    if p.name != "manifest.json"
                 )
-            if candidates:
-                actual_results_file = candidates[0]
+                if candidates:
+                    actual_results_file = candidates[0]
 
         if actual_results_file.exists():
             findings, raw_output_hash = ProwlerRawIngestor.load_raw_findings(str(actual_results_file))
