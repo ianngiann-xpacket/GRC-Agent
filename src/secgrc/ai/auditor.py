@@ -22,7 +22,7 @@ class AIAuditor:
 
     def __init__(
         self,
-        model_name: str = "gemini-2.5-flash",
+        model_name: str = "gemini-3.8-flash",
         api_key: Optional[str] = None,
     ):
         self.model_name = model_name
@@ -161,7 +161,7 @@ class AIAuditor:
 
             full_prompt = f"{SYSTEM_PROMPT}\n\n{user_prompt}"
 
-            candidate_models = [self.model_name, "gemini-2.5-flash", "gemini-1.5-flash"]
+            candidate_models = [self.model_name, "gemini-3.8-flash", "gemini-2.5-flash", "gemini-1.5-flash"]
             unique_models = []
             for m in candidate_models:
                 if m not in unique_models:

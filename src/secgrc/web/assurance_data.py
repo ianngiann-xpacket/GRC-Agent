@@ -749,7 +749,7 @@ _CONTROL_REF = re.compile(r"\b([123]\.\d{1,2}\.\d{1,2})\b")
 _TEXT_EXT = {".txt", ".md", ".csv", ".log", ".json"}
 _HTML_EXT = {".html", ".htm"}
 _LLM_CTX_MAX = 12000
-_LLM_MODELS = ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-3.6-flash"]
+_LLM_MODELS = ["gemini-3.8-flash", "gemini-2.5-flash", "gemini-1.5-flash"]
 _Q_STOP = {"파일", "본문", "내용", "읽어", "읽어서", "인용", "그대로", "설명", "알려", "무엇", "대해",
            "그리고", "해줘", "해주세요", "작성", "명시", "정책서", "비고란", "관리"}
 
@@ -1045,7 +1045,7 @@ def post_assistant(message: str, page: Optional[str] = None) -> Dict[str, Any]:
             "이 어시스턴트는 **하이브리드 구조**입니다.\n\n"
             "- 기본 응답: 결정론적 규칙 엔진 — 의도 라우팅 + 증적·통제 조회\n"
             "- LLM 호출: **업로드 증적의 본문 질의** 시에만 Google Gemini API 사용 "
-            "(후보 모델: gemini-2.5-flash, gemini-1.5-flash, gemini-3.6-flash)\n\n"
+            "(후보 모델: gemini-3.8-flash, gemini-2.5-flash, gemini-1.5-flash)\n\n"
             f"현재 LLM 가용 상태: SDK **{'설치됨' if sdk_ok else '미설치'}** · "
             f"API 키 **{'설정됨' if key_ok else '미설정'}**\n\n"
             "각 응답의 `generated_by` 표기로 실제 LLM 사용 여부를 확인할 수 있습니다 — "

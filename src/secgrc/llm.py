@@ -68,7 +68,7 @@ def audit_with_llm(
 """
 
         # 트래픽 과부하(503)에 대비한 단계적 모델 폴백 리스트
-        candidate_models = ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-3.6-flash"]
+        candidate_models = ["gemini-3.8-flash", "gemini-2.5-flash", "gemini-1.5-flash"]
         response = None
         last_err = None
 
