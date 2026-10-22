@@ -347,6 +347,8 @@ button { font-family: inherit; }
 .ev-modal { position: fixed; inset: 0; background: rgba(15,23,42,.45); z-index: 1000;
   display: flex; align-items: center; justify-content: center; padding: 24px; }
 .ev-modal[hidden] { display: none; }
+/* 검토·승인 패널은 인라인 display:flex를 쓰므로 hidden이 무시되지 않도록 강제 */
+#reviewModal[hidden] { display: none !important; }
 .ev-modal-panel { width: 780px; max-width: 100%; max-height: 86vh; background: var(--surface);
   border-radius: var(--radius); box-shadow: var(--shadow-lg); display: flex; flex-direction: column;
   overflow: hidden; }
